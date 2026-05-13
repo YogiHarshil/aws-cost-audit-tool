@@ -1,0 +1,22 @@
+# AWS SDK
+boto3>=1.42.0
+botocore>=1.45.0
+
+# AI Integration
+openai>=1.0.0
+
+# Templating and PDF Generation
+jinja2>=3.1.0
+weasyprint>=60.0
+Pillow>=10.0.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Data Visualization
+matplotlib>=3.8.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0

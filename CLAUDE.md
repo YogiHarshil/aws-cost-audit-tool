@@ -44,3 +44,10 @@ Phase 6: Sample report for sales demos
 
 ## Session start
 Read this file, run git log --oneline -5, confirm in 3 lines, wait for instructions.
+
+<!-- SPECKIT START -->
+## Active Feature
+
+Current feature: AWS Cost Audit Tool (001-aws-cost-audit)
+Implementation plan: specs/001-aws-cost-audit/plan.md
+<!-- SPECKIT END -->
