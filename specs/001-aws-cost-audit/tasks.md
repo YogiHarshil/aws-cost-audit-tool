@@ -53,19 +53,19 @@ Single Python project structure at repository root:
 
 **⚠️ CRITICAL**: These components are blocking prerequisites for all scanners
 
-- [ ] T015 Create utils/__init__.py (empty module initializer)
-- [ ] T016 Implement AWS client factory in utils/aws_client.py (create_client with AssumeRole support, region discovery, adaptive retry config)
-- [ ] T017 Implement region name mapping in utils/pricing.py (REGION_NAME_MAPPING dict per research.md)
-- [ ] T018 Implement PricingCache class in utils/pricing.py (thread-safe session-level cache)
-- [ ] T019 Implement get_ec2_instance_price in utils/pricing.py (query Pricing API with filters, parse nested JSON)
-- [ ] T020 [P] Implement get_rds_instance_price in utils/pricing.py (similar pattern to EC2)
-- [ ] T021 [P] Implement get_ebs_volume_price in utils/pricing.py (per GB-month pricing)
-- [ ] T022 [P] Implement batch_get_prices utility in utils/pricing.py (ThreadPoolExecutor for parallel pricing queries)
-- [ ] T023 Implement config.py (Config class with from_env_and_args classmethod, merge .env and CLI args)
-- [ ] T024 Implement parse_exclude_tags helper in config.py (parse "Key=Value,Key2=Value2" format)
-- [ ] T025 [P] Write unit tests for AWS client factory in tests/test_utils.py (mock boto3, verify AssumeRole calls)
-- [ ] T026 [P] Write unit tests for pricing queries in tests/test_utils.py (mock Pricing API responses, verify cache hits)
-- [ ] T027 [P] Write unit tests for config loading in tests/test_config.py (test precedence: CLI > env > defaults)
+- [X] T015 Create utils/__init__.py (empty module initializer)
+- [X] T016 Implement AWS client factory in utils/aws_client.py (create_client with AssumeRole support, region discovery, adaptive retry config)
+- [X] T017 Implement region name mapping in utils/pricing.py (REGION_NAME_MAPPING dict per research.md)
+- [X] T018 Implement PricingCache class in utils/pricing.py (thread-safe session-level cache)
+- [X] T019 Implement get_ec2_instance_price in utils/pricing.py (query Pricing API with filters, parse nested JSON)
+- [X] T020 [P] Implement get_rds_instance_price in utils/pricing.py (similar pattern to EC2)
+- [X] T021 [P] Implement get_ebs_volume_price in utils/pricing.py (per GB-month pricing)
+- [X] T022 [P] Implement batch_get_prices utility in utils/pricing.py (ThreadPoolExecutor for parallel pricing queries)
+- [X] T023 Implement config.py (Config class with from_env_and_args classmethod, merge .env and CLI args)
+- [X] T024 Implement parse_exclude_tags helper in config.py (parse "Key=Value,Key2=Value2" format)
+- [X] T025 [P] Write unit tests for AWS client factory in tests/test_utils.py (mock boto3, verify AssumeRole calls)
+- [X] T026 [P] Write unit tests for pricing queries in tests/test_utils.py (mock Pricing API responses, verify cache hits)
+- [X] T027 [P] Write unit tests for config loading in tests/test_config.py (test precedence: CLI > env > defaults)
 
 **Checkpoint**: Run `pytest tests/test_utils.py tests/test_config.py` - all tests should pass
 
@@ -79,45 +79,45 @@ Single Python project structure at repository root:
 
 ### EC2 Scanner
 
-- [ ] T028 Create scanners/__init__.py (empty module initializer)
-- [ ] T029 Implement BaseScanner class in scanners/base.py (common error handling, tag filtering, pagination)
-- [ ] T030 Implement EC2Scanner in scanners/ec2.py (inherit from BaseScanner)
-- [ ] T031 Implement _scan_stopped_instances in scanners/ec2.py (filter stopped >7 days, calculate savings)
-- [ ] T032 Implement _scan_low_utilization_instances in scanners/ec2.py (CloudWatch CPUUtilization query, <5% threshold, handle missing metrics)
-- [ ] T033 Write unit tests for EC2Scanner in tests/test_scanners.py (mock boto3 EC2 and CloudWatch responses)
+- [X] T028 Create scanners/__init__.py (empty module initializer)
+- [X] T029 Implement BaseScanner class in scanners/base.py (common error handling, tag filtering, pagination)
+- [X] T030 Implement EC2Scanner in scanners/ec2.py (inherit from BaseScanner)
+- [X] T031 Implement _scan_stopped_instances in scanners/ec2.py (filter stopped >7 days, calculate savings)
+- [X] T032 Implement _scan_low_utilization_instances in scanners/ec2.py (CloudWatch CPUUtilization query, <5% threshold, handle missing metrics)
+- [X] T033 Write unit tests for EC2Scanner in tests/test_scanners.py (mock boto3 EC2 and CloudWatch responses)
 
 ### RDS Scanner
 
-- [ ] T034 [P] Implement RDSScanner in scanners/rds.py (inherit from BaseScanner)
-- [ ] T035 [P] Implement _scan_zero_connections in scanners/rds.py (CloudWatch DatabaseConnections metric, 14-day lookback)
-- [ ] T036 [P] Implement _scan_stopped_instances in scanners/rds.py (filter stopped RDS instances)
-- [ ] T037 [P] Write unit tests for RDSScanner in tests/test_scanners.py (mock RDS and CloudWatch)
+- [X] T034 [P] Implement RDSScanner in scanners/rds.py (inherit from BaseScanner)
+- [X] T035 [P] Implement _scan_zero_connections in scanners/rds.py (CloudWatch DatabaseConnections metric, 14-day lookback)
+- [X] T036 [P] Implement _scan_stopped_instances in scanners/rds.py (filter stopped RDS instances)
+- [X] T037 [P] Write unit tests for RDSScanner in tests/test_scanners.py (mock RDS and CloudWatch)
 
 ### EBS Scanner
 
-- [ ] T038 [P] Implement EBSScanner in scanners/ebs.py (inherit from BaseScanner)
-- [ ] T039 [P] Implement _scan_unattached_volumes in scanners/ebs.py (filter State=available, calculate per-GB-month savings)
-- [ ] T040 [P] Write unit tests for EBSScanner in tests/test_scanners.py (mock EC2 DescribeVolumes)
+- [X] T038 [P] Implement EBSScanner in scanners/ebs.py (inherit from BaseScanner)
+- [X] T039 [P] Implement _scan_unattached_volumes in scanners/ebs.py (filter State=available, calculate per-GB-month savings)
+- [X] T040 [P] Write unit tests for EBSScanner in tests/test_scanners.py (mock EC2 DescribeVolumes)
 
 ### EIP Scanner
 
-- [ ] T041 [P] Implement EIPScanner in scanners/eip.py (inherit from BaseScanner)
-- [ ] T042 [P] Implement _scan_unassociated_ips in scanners/eip.py (filter AssociationId=null, $3.60/month savings)
-- [ ] T043 [P] Write unit tests for EIPScanner in tests/test_scanners.py (mock EC2 DescribeAddresses)
+- [X] T041 [P] Implement EIPScanner in scanners/eip.py (inherit from BaseScanner)
+- [X] T042 [P] Implement _scan_unassociated_ips in scanners/eip.py (filter AssociationId=null, $3.60/month savings)
+- [X] T043 [P] Write unit tests for EIPScanner in tests/test_scanners.py (mock EC2 DescribeAddresses)
 
 ### S3 Scanner
 
-- [ ] T044 [P] Implement S3Scanner in scanners/s3.py (inherit from BaseScanner)
-- [ ] T045 [P] Implement _scan_missing_lifecycle in scanners/s3.py (check GetLifecycleConfiguration)
-- [ ] T046 [P] Implement _scan_large_buckets_no_tiering in scanners/s3.py (CloudWatch BucketSizeBytes >100GB, check Intelligent-Tiering)
-- [ ] T047 [P] Write unit tests for S3Scanner in tests/test_scanners.py (mock S3 and CloudWatch)
+- [X] T044 [P] Implement S3Scanner in scanners/s3.py (inherit from BaseScanner)
+- [X] T045 [P] Implement _scan_missing_lifecycle in scanners/s3.py (check GetLifecycleConfiguration)
+- [X] T046 [P] Implement _scan_large_buckets_no_tiering in scanners/s3.py (CloudWatch BucketSizeBytes >100GB, check Intelligent-Tiering)
+- [X] T047 [P] Write unit tests for S3Scanner in tests/test_scanners.py (mock S3 and CloudWatch)
 
 ### Cost Explorer Scanner
 
-- [ ] T048 [P] Implement CostExplorerScanner in scanners/cost_explorer.py (NOT inherit from BaseScanner - different pattern)
-- [ ] T049 [P] Implement get_90_day_spend in scanners/cost_explorer.py (GetCostAndUsage grouped by SERVICE)
-- [ ] T050 [P] Implement get_month_over_month_trend in scanners/cost_explorer.py (compare current MTD vs previous month, flag >20% increase)
-- [ ] T051 [P] Write unit tests for CostExplorerScanner in tests/test_scanners.py (mock Cost Explorer API)
+- [X] T048 [P] Implement CostExplorerScanner in scanners/cost_explorer.py (NOT inherit from BaseScanner - different pattern)
+- [X] T049 [P] Implement get_90_day_spend in scanners/cost_explorer.py (GetCostAndUsage grouped by SERVICE)
+- [X] T050 [P] Implement get_month_over_month_trend in scanners/cost_explorer.py (compare current MTD vs previous month, flag >20% increase)
+- [X] T051 [P] Write unit tests for CostExplorerScanner in tests/test_scanners.py (mock Cost Explorer API)
 
 **Checkpoint**: Run `pytest tests/test_scanners.py` - all scanner tests should pass
 
@@ -129,14 +129,14 @@ Single Python project structure at repository root:
 
 **Goal**: Executive summary, per-finding explanations, top 5 recommendations
 
-- [ ] T052 Create ai/__init__.py (empty module initializer)
-- [ ] T053 Implement prompt templates in ai/prompts.py (EXECUTIVE_SUMMARY_PROMPT, FINDING_EXPLANATION_PROMPT, RECOMMENDATIONS_PROMPT)
-- [ ] T054 Implement Summarizer class in ai/summarizer.py (generate_executive_summary method)
-- [ ] T055 Implement error handling in ai/summarizer.py (catch OpenAI API failures, return "AI summary unavailable" on error)
-- [ ] T056 [P] Implement Recommender class in ai/recommender.py (generate_top_5_recommendations method)
-- [ ] T057 [P] Implement per-finding explanation in ai/summarizer.py (generate_finding_explanation method for individual findings)
-- [ ] T058 [P] Write unit tests for AI modules in tests/test_ai.py (mock OpenAI API responses, verify prompt structure)
-- [ ] T059 [P] Write unit tests for AI error handling in tests/test_ai.py (simulate API failures, verify graceful degradation)
+- [X] T052 Create ai/__init__.py (empty module initializer)
+- [X] T053 Implement prompt templates in ai/prompts.py (EXECUTIVE_SUMMARY_PROMPT, FINDING_EXPLANATION_PROMPT, RECOMMENDATIONS_PROMPT)
+- [X] T054 Implement Summarizer class in ai/summarizer.py (generate_executive_summary method)
+- [X] T055 Implement error handling in ai/summarizer.py (catch OpenAI API failures, return "AI summary unavailable" on error)
+- [X] T056 [P] Implement Recommender class in ai/recommender.py (generate_top_5_recommendations method)
+- [X] T057 [P] Implement per-finding explanation in ai/summarizer.py (generate_finding_explanation method for individual findings)
+- [X] T058 [P] Write unit tests for AI modules in tests/test_ai.py (mock OpenAI API responses, verify prompt structure)
+- [X] T059 [P] Write unit tests for AI error handling in tests/test_ai.py (simulate API failures, verify graceful degradation)
 
 **Checkpoint**: Run `pytest tests/test_ai.py` - all AI tests should pass
 
@@ -148,15 +148,15 @@ Single Python project structure at repository root:
 
 **Goal**: Jinja2 HTML template rendered to PDF with WeasyPrint
 
-- [ ] T060 Create reports/__init__.py (empty module initializer)
-- [ ] T061 Create reports/templates/ directory
-- [ ] T062 Implement HTML report template in reports/templates/report.html (cover page, executive summary, findings table, recommendations per research.md)
-- [ ] T063 Implement CSS styling in report.html (professional corporate styling: blues/grays, @page rules, alternating row colors, severity badges)
-- [ ] T064 Implement generate_cost_chart in reports/generator.py (matplotlib line chart, save as base64-encoded PNG)
-- [ ] T065 Implement render_html in reports/generator.py (Jinja2 rendering with findings, cost chart, AI summaries)
-- [ ] T066 Implement generate_pdf in reports/pdf.py (WeasyPrint HTML to PDF conversion)
-- [ ] T067 [P] Write unit tests for report generator in tests/test_reports.py (test HTML rendering with sample data)
-- [ ] T068 [P] Write unit tests for PDF generation in tests/test_reports.py (verify PDF output file exists and is valid)
+- [X] T060 Create reports/__init__.py (empty module initializer)
+- [X] T061 Create reports/templates/ directory
+- [X] T062 Implement HTML report template in reports/templates/report.html (cover page, executive summary, findings table, recommendations per research.md)
+- [X] T063 Implement CSS styling in report.html (professional corporate styling: blues/grays, @page rules, alternating row colors, severity badges)
+- [X] T064 Implement generate_cost_chart in reports/generator.py (matplotlib line chart, save as base64-encoded PNG)
+- [X] T065 Implement render_html in reports/generator.py (Jinja2 rendering with findings, cost chart, AI summaries)
+- [X] T066 Implement generate_pdf in reports/pdf.py (WeasyPrint HTML to PDF conversion)
+- [X] T067 [P] Write unit tests for report generator in tests/test_reports.py (test HTML rendering with sample data)
+- [X] T068 [P] Write unit tests for PDF generation in tests/test_reports.py (verify PDF output file exists and is valid)
 
 **Checkpoint**: Run `pytest tests/test_reports.py` - all report tests should pass
 
@@ -168,17 +168,17 @@ Single Python project structure at repository root:
 
 **Goal**: Complete audit workflow from CLI invocation to PDF output
 
-- [ ] T069 Implement CLI argument parsing in main.py (argparse with --profile, --region, --client-name, --skip-ai, --output, --exclude-tags, --verbose)
-- [ ] T070 Implement logging setup in main.py (configure logging based on --verbose flag and LOG_LEVEL env var)
-- [ ] T071 Implement main orchestration flow in main.py (load config, validate credentials, discover regions, run scanners in parallel)
-- [ ] T072 Implement parallel scanner execution in main.py (ThreadPoolExecutor with up to 10 workers, aggregate findings)
-- [ ] T073 Implement AI summary generation in main.py (call summarizer and recommender if not --skip-ai)
-- [ ] T074 Implement report generation and PDF output in main.py (call report generator, save to output/ directory)
-- [ ] T075 Implement progress indicators in main.py (print scan progress: "[1/6] Scanning EC2 instances...")
-- [ ] T076 Implement error handling and exit codes in main.py (exit 0 on success, 1 on critical error, 2 on partial results)
-- [ ] T077 Implement summary output in main.py (print report path, total savings, breakdown by severity, scan duration)
-- [ ] T078 Write end-to-end tests in tests/test_e2e.py (mock all AWS and OpenAI calls, verify complete workflow)
-- [ ] T079 Write CLI argument tests in tests/test_e2e.py (test argument parsing, config precedence, exit codes)
+- [X] T069 Implement CLI argument parsing in main.py (argparse with --profile, --region, --client-name, --skip-ai, --output, --exclude-tags, --verbose)
+- [X] T070 Implement logging setup in main.py (configure logging based on --verbose flag and LOG_LEVEL env var)
+- [X] T071 Implement main orchestration flow in main.py (load config, validate credentials, discover regions, run scanners in parallel)
+- [X] T072 Implement parallel scanner execution in main.py (ThreadPoolExecutor with up to 10 workers, aggregate findings)
+- [X] T073 Implement AI summary generation in main.py (call summarizer and recommender if not --skip-ai)
+- [X] T074 Implement report generation and PDF output in main.py (call report generator, save to output/ directory)
+- [X] T075 Implement progress indicators in main.py (print scan progress: "[1/6] Scanning EC2 instances...")
+- [X] T076 Implement error handling and exit codes in main.py (exit 0 on success, 1 on critical error, 2 on partial results)
+- [X] T077 Implement summary output in main.py (print report path, total savings, breakdown by severity, scan duration)
+- [X] T078 Write end-to-end tests in tests/test_e2e.py (mock all AWS and OpenAI calls, verify complete workflow)
+- [X] T079 Write CLI argument tests in tests/test_e2e.py (test argument parsing, config precedence, exit codes)
 
 **Checkpoint**: Run `pytest tests/test_e2e.py` - end-to-end tests should pass
 

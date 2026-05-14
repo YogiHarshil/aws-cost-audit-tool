@@ -1,8 +1,13 @@
 """Finding data model for wasteful AWS resources."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
+
+
+def _utc_now() -> datetime:
+    """Timezone-aware UTC now (replaces deprecated datetime.utcnow)."""
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -18,7 +23,7 @@ class Finding:
     severity: str  # "High", "Medium", or "Low"
     details: Dict  # Additional metadata (instance type, size, tags, etc.)
     ai_explanation: Optional[str] = None  # AI-generated explanation (nullable)
-    discovered_at: datetime = field(default_factory=datetime.utcnow)
+    discovered_at: datetime = field(default_factory=_utc_now)
 
     def __post_init__(self):
         """Validate field values."""

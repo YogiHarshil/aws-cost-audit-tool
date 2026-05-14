@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import Any, Dict, List, Optional
 import os
 
 # Import Finding for type hints
@@ -75,6 +75,10 @@ class ScanConfig:
     regions: Optional[List[str]] = None  # None = all enabled regions
     client_name: str = "Client"
     openai_api_key: Optional[str] = None
+    openai_base_url: Optional[str] = None  # e.g. OpenRouter: https://openrouter.ai/api/v1
+    openai_model: str = "gpt-4o-mini"  # e.g. OpenRouter: openai/gpt-4o-mini
+    openai_extra_body: Optional[Dict[str, Any]] = None  # e.g. OpenRouter reasoning: {"reasoning": {"enabled": True}}
+    openai_default_headers: Optional[Dict[str, str]] = None  # e.g. HTTP-Referer, X-Title for OpenRouter
     skip_ai: bool = False
     output_dir: str = "./output"
     exclude_tags: Optional[List[Dict[str, str]]] = None  # Tag filters

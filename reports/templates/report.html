@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>AWS Cost Audit — {{ client_name }}</title>
+    <style>
+        @page {
+            size: Letter;
+            margin: 0.65in 0.6in;
+        }
+
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 10.5pt;
+            color: #2c3e50;
+            line-height: 1.45;
+            margin: 0;
+        }
+
+        h1, h2, h3 {
+            color: #1a3a5c;
+            font-weight: 600;
+        }
+
+        .cover {
+            page-break-after: always;
+            text-align: center;
+            padding-top: 2.25in;
+        }
+
+        .cover h1 {
+            font-size: 28pt;
+            color: #0d5c9e;
+            margin-bottom: 0.15in;
+            letter-spacing: -0.02em;
+        }
+
+        .cover .subtitle {
+            font-size: 14pt;
+            color: #5a6c7d;
+            margin-bottom: 0.35in;
+        }
+
+        .cover .meta {
+            font-size: 11pt;
+            color: #5a6c7d;
+            margin: 0.2in 0;
+        }
+
+        .cover .savings {
+            font-size: 36pt;
+            color: #0d8050;
+            font-weight: 700;
+            margin: 0.35in 0 0.1in;
+        }
+
+        .cover .savings-label {
+            font-size: 11pt;
+            color: #5a6c7d;
+        }
+
+        .cover .scan-meta {
+            margin-top: 0.6in;
+            font-size: 9.5pt;
+            color: #7a8a99;
+            line-height: 1.6;
+        }
+
+        .section {
+            page-break-after: always;
+        }
+
+        .section:last-of-type {
+            page-break-after: auto;
+        }
+
+        .exec-body {
+            white-space: pre-wrap;
+            margin: 0.15in 0 0.25in;
+            color: #34495e;
+        }
+
+        .metrics {
+            display: table;
+            width: 100%;
+            margin: 0.2in 0 0.35in;
+            border: 1px solid #d5dee8;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .metric-row {
+            display: table-row;
+        }
+
+        .metric-cell {
+            display: table-cell;
+            padding: 10px 12px;
+            border-bottom: 1px solid #e8eef4;
+            background: #f7fafc;
+            width: 40%;
+            font-weight: 600;
+            color: #1a3a5c;
+        }
+
+        .metric-value {
+            display: table-cell;
+            padding: 10px 12px;
+            border-bottom: 1px solid #e8eef4;
+            background: #fff;
+        }
+
+        .chart-wrap {
+            text-align: center;
+            margin: 0.25in 0;
+        }
+
+        .chart-wrap img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .chart-caption {
+            font-size: 9.5pt;
+            color: #5a6c7d;
+            margin-top: 6px;
+        }
+
+        table.findings {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.2in 0;
+            font-size: 9.5pt;
+        }
+
+        table.findings th {
+            background: linear-gradient(180deg, #0d5c9e 0%, #0a4d84 100%);
+            color: #fff;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #084468;
+        }
+
+        table.findings td {
+            padding: 8px;
+            border-bottom: 1px solid #dde5ed;
+            vertical-align: top;
+        }
+
+        table.findings tbody tr:nth-child(even) {
+            background-color: #f4f7fb;
+        }
+
+        table.findings tbody tr:nth-child(odd) {
+            background-color: #fff;
+        }
+
+        tr.finding-ai td {
+            background: #fafcfd !important;
+            font-size: 9pt;
+            color: #4a5a6a;
+            border-bottom: 1px solid #dde5ed;
+            padding-top: 4px;
+            padding-bottom: 10px;
+        }
+
+        .severity {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 8.5pt;
+            letter-spacing: 0.02em;
+        }
+
+        .severity-high {
+            background-color: #e02424;
+            color: #fff;
+        }
+
+        .severity-medium {
+            background-color: #e67e22;
+            color: #fff;
+        }
+
+        .severity-low {
+            background-color: #f4b400;
+            color: #2c3e50;
+        }
+
+        .rec-block {
+            margin-bottom: 0.35in;
+            padding: 12px 14px;
+            border-left: 4px solid #0d5c9e;
+            background: #f7fafc;
+        }
+
+        .rec-block h3 {
+            margin: 0 0 8px;
+            font-size: 11.5pt;
+            color: #0d5c9e;
+        }
+
+        .rec-meta {
+            font-size: 9.5pt;
+            color: #5a6c7d;
+            margin: 4px 0;
+        }
+
+        .page-header {
+            font-size: 9pt;
+            color: #7a8a99;
+            border-bottom: 1px solid #dde5ed;
+            padding-bottom: 6px;
+            margin-bottom: 0.2in;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="cover">
+        <h1>AWS Cost Audit Report</h1>
+        <p class="subtitle">{{ client_name }}</p>
+        <p class="meta">Account: {{ account_id }} ({{ account_alias }})</p>
+        <p class="meta">Report date: {{ report_date }}</p>
+        <div class="savings">{{ total_savings | money_int }}</div>
+        <p class="savings-label">Estimated monthly savings (findings)</p>
+        <div class="scan-meta">
+            Regions scanned: {{ regions_label }}<br>
+            Findings: {{ findings_count }} &nbsp;|&nbsp;
+            High: {{ findings_by_severity["High"] }},
+            Medium: {{ findings_by_severity["Medium"] }},
+            Low: {{ findings_by_severity["Low"] }}<br>
+            {% if scan_duration_seconds > 0 %}
+            Scan duration: {{ "%.1f"|format(scan_duration_seconds) }}s
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="page-header">{{ client_name }} — Executive summary</div>
+        <h2>Executive summary</h2>
+        <p class="exec-body">{{ executive_summary_display }}</p>
+
+        <div class="metrics">
+            <div class="metric-row">
+                <div class="metric-cell">Total monthly savings</div>
+                <div class="metric-value">{{ total_savings | money }}</div>
+            </div>
+            <div class="metric-row">
+                <div class="metric-cell">Findings by service</div>
+                <div class="metric-value">
+                    {% for svc, n in findings_by_type.items() %}
+                        {{ svc }}: {{ n }}{% if not loop.last %} · {% endif %}
+                    {% endfor %}
+                    {% if findings_by_type|length == 0 %}—{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-wrap">
+            <h3 style="margin-bottom:8px;">Cost trend</h3>
+            <img src="{{ cost_chart_src }}" alt="Cost trend chart">
+            <p class="chart-caption">Based on daily series in the report when present; otherwise monthly aggregates or placeholder zeros.</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="page-header">{{ client_name }} — Findings</div>
+        <h2>Findings detail</h2>
+        <table class="findings">
+            <thead>
+                <tr>
+                    <th>Resource</th>
+                    <th>Type</th>
+                    <th>Region</th>
+                    <th>Issue</th>
+                    <th>Monthly savings</th>
+                    <th>Severity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in findings %}
+                <tr>
+                    <td><strong>{{ finding.resource_id }}</strong></td>
+                    <td>{{ finding.resource_type }}</td>
+                    <td>{{ finding.region }}</td>
+                    <td>{{ finding.description }}</td>
+                    <td>{{ finding.monthly_savings | money }}</td>
+                    <td>
+                        <span class="severity severity-{{ finding.severity|lower }}">{{ finding.severity }}</span>
+                    </td>
+                </tr>
+                {% if finding.ai_explanation %}
+                <tr class="finding-ai">
+                    <td colspan="6"><em>AI note:</em> {{ finding.ai_explanation }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if findings|length == 0 %}
+        <p style="color:#5a6c7d;">No findings for this scan.</p>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <div class="page-header">{{ client_name }} — Recommendations</div>
+        <h2>Top recommendations</h2>
+        {% if recommendations|length > 0 %}
+            {% for rec in recommendations %}
+            <div class="rec-block">
+                <h3>{{ loop.index }}. {{ rec.get("title", "Untitled") }}</h3>
+                <p class="rec-meta"><strong>Impact:</strong> {{ rec.get("impact", 0) | money }} / month
+                    &nbsp;|&nbsp; <strong>Difficulty:</strong> {{ rec.get("difficulty", "—") }}</p>
+                <p>{{ rec.get("description", "") }}</p>
+            </div>
+            {% endfor %}
+        {% else %}
+        <p style="color:#5a6c7d;">No AI recommendations were generated for this report.</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>
