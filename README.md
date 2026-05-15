@@ -4,11 +4,15 @@ Python CLI tool that scans AWS accounts for wasted spend and generates professio
 
 ## Features
 
-- **6 Scanner Types**: EC2, RDS, EBS, EIP, S3, Cost Explorer
-- **AI-Powered**: GPT-4o-mini summaries and recommendations
-- **Professional PDFs**: Client-ready reports with charts and tables
-- **Fast Scans**: Complete audits in <30 minutes
-- **Read-Only**: Zero-risk AWS scanning with minimal IAM permissions
+- **9 Scanner Types**: EC2, RDS, EBS, EIP, S3, Cost Explorer, Savings Plans, Compute Optimizer, Trusted Advisor
+- **AI-Powered**: GPT-4o-mini summaries and recommendations via OpenRouter
+- **Professional PDFs**: Client-ready reports with charts, tables, and proper page breaks
+- **ML-Based Rightsizing**: AWS Compute Optimizer integration for EC2 recommendations
+- **Savings Plans Analysis**: Coverage and utilization checks for commitment optimization
+- **Trusted Advisor Integration**: Cost optimization recommendations (Business/Enterprise Support)
+- **DLM-Aware Snapshots**: Correctly identifies AWS-managed snapshots (Backup + DLM)
+- **Fast Parallel Scans**: Multi-region concurrent scanning
+- **Read-Only**: Zero-risk AWS scanning with 38 minimal IAM permissions
 
 ## Quick Start
 
@@ -81,9 +85,25 @@ Exclude tagged resources:
 python main.py --exclude-tags "Environment=Production"
 ```
 
+## Scanners
+
+| Scanner | Description | AWS Service |
+|---------|-------------|-------------|
+| **EC2** | Stopped instances, low CPU utilization | EC2, CloudWatch |
+| **RDS** | Idle databases (zero connections) | RDS, CloudWatch |
+| **EBS** | Unattached volumes, old snapshots | EC2 |
+| **EIP** | Unassociated Elastic IPs | EC2 |
+| **S3** | Buckets without lifecycle policies | S3 |
+| **Cost Explorer** | Spending trends, anomalies | Cost Explorer |
+| **Savings Plans** | Coverage gaps, underutilization | Cost Explorer |
+| **Compute Optimizer** | ML-based EC2 rightsizing | Compute Optimizer |
+| **Trusted Advisor** | Cost optimization checks | Trusted Advisor |
+
+**Note**: Compute Optimizer requires opt-in. Trusted Advisor requires Business/Enterprise Support plan. Both gracefully skip if unavailable.
+
 ## IAM Permissions
 
-Attach the minimal read-only policy to your IAM role/user:
+Attach the minimal read-only policy (38 actions) to your IAM role/user:
 
 ```bash
 # Use the provided policy
@@ -91,6 +111,18 @@ aws iam put-role-policy --role-name CostAuditRole --policy-name AuditPolicy --po
 ```
 
 See `iam_policy.json` for the complete policy.
+
+### Required Permissions Summary
+
+```
+EC2:           DescribeInstances, DescribeVolumes, DescribeSnapshots, DescribeAddresses
+RDS:           DescribeDBInstances, DescribeDBClusters
+CloudWatch:    GetMetricStatistics
+S3:            ListAllMyBuckets, GetBucketLifecycleConfiguration, GetBucketLocation
+Cost Explorer: GetCostAndUsage, GetSavingsPlansCoverage, GetSavingsPlansUtilization
+Compute Opt:   GetEnrollmentStatus, GetEC2InstanceRecommendations
+Trusted Adv:   ListRecommendations, GetRecommendation
+```
 
 ## Output
 
@@ -148,6 +180,45 @@ pytest --cov=. --cov-report=html
 - Use IAM roles instead of access keys
 - Rotate OpenAI API keys regularly
 - Review `iam_policy.json` for read-only permissions
+
+## Project Structure
+
+```
+aws-cost-audit-tool/
+├── main.py                 # CLI entry point
+├── config.py               # Configuration loader
+├── scanners/               # AWS resource scanners
+│   ├── ec2.py              # EC2 instance scanner
+│   ├── rds.py              # RDS database scanner
+│   ├── ebs.py              # EBS volume scanner
+│   ├── snapshots.py        # EBS snapshot scanner (DLM-aware)
+│   ├── eip.py              # Elastic IP scanner
+│   ├── s3.py               # S3 bucket scanner
+│   ├── cost_explorer.py    # Cost trends scanner
+│   ├── reserved_instances.py # RI coverage scanner
+│   ├── savings_plans.py    # Savings Plans coverage/utilization
+│   ├── compute_optimizer.py # ML-based rightsizing
+│   └── trusted_advisor.py  # TA cost optimization checks
+├── ai/                     # AI integration
+│   ├── summarizer.py       # Report summarization
+│   ├── recommender.py      # Recommendation engine
+│   └── prompts.py          # Prompt templates
+├── reports/                # Report generation
+│   ├── generator.py        # Report builder
+│   ├── pdf.py              # WeasyPrint PDF output
+│   └── templates/          # Jinja2 HTML templates
+├── models/                 # Data models
+│   ├── finding.py          # Finding dataclass
+│   └── report.py           # Report dataclass
+├── utils/                  # Utilities
+│   ├── aws_client.py       # boto3 session management
+│   └── pricing.py          # AWS pricing lookups
+├── tests/                  # Test suite
+├── sample/                 # Sample report generator
+├── docs/                   # Documentation
+│   └── CHANGELOG.md        # Version history and changes
+└── output/                 # Generated PDFs (gitignored)
+```
 
 ## License
 
