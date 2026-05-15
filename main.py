@@ -26,7 +26,9 @@ from scanners.ebs import EBSScanner
 from scanners.ec2 import EC2Scanner
 from scanners.eip import EIPScanner
 from scanners.rds import RDSScanner
+from scanners.reservations import ReservationScanner
 from scanners.s3 import S3Scanner
+from scanners.snapshots import SnapshotScanner
 from utils.aws_client import create_client, create_session, discover_regions
 from utils.pricing import PricingCache
 
@@ -43,6 +45,7 @@ _SCANNER_CLASSES: Sequence[Type[BaseScanner]] = (
     EBSScanner,
     EIPScanner,
     S3Scanner,
+    SnapshotScanner,
 )
 
 _SCANNER_LABELS = (
@@ -51,6 +54,7 @@ _SCANNER_LABELS = (
     "EBS volumes",
     "Elastic IPs",
     "S3 buckets",
+    "EBS snapshots",
 )
 
 
@@ -280,13 +284,13 @@ def run_audit(cfg: Config) -> int:
 
     all_findings: List[Finding] = []
 
-    print("[1/6] Scanning Cost Explorer (account-wide)...", flush=True)
+    print("[1/8] Scanning Cost Explorer (account-wide)...", flush=True)
     ce_findings, cost_trends, ce_errs = cost_explorer_phase(session)
     all_findings.extend(ce_findings)
     partial_notes.extend(ce_errs)
 
     for step_idx, (scanner_cls, label) in enumerate(zip(_SCANNER_CLASSES, _SCANNER_LABELS), start=2):
-        print(f"[{step_idx}/6] Scanning {label}...", flush=True)
+        print(f"[{step_idx}/8] Scanning {label}...", flush=True)
         fnd, errs = run_regional_scanners_parallel(
             session,
             regions,
@@ -297,6 +301,16 @@ def run_audit(cfg: Config) -> int:
         )
         all_findings.extend(fnd)
         partial_notes.extend(errs)
+
+    # Global RI coverage scan (runs once, checks all regions internally)
+    print("[8/8] Scanning Reserved Instance coverage...", flush=True)
+    try:
+        ri_scanner = ReservationScanner(session, pricing_client, cache)
+        ri_findings = ri_scanner.scan()
+        all_findings.extend(ri_findings)
+    except Exception as exc:
+        logger.exception("RI coverage scan failed")
+        partial_notes.append(f"reservations:{exc}")
 
     scan_elapsed = time.perf_counter() - t0
     scan_date = datetime.now(timezone.utc)

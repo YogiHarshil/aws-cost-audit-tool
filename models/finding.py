@@ -36,6 +36,9 @@ class Finding:
             raise ValueError(f"Negative savings not allowed: {self.monthly_savings}")
 
         # Validate resource_type
-        valid_types = ["EC2", "RDS", "EBS", "EIP", "S3", "Cost Explorer"]
+        valid_types = [
+            "EC2", "RDS", "EBS", "EIP", "S3", "Cost Explorer",
+            "EBS Snapshot", "Reserved Instance",
+        ]
         if self.resource_type not in valid_types:
             raise ValueError(f"Invalid resource_type: {self.resource_type}")

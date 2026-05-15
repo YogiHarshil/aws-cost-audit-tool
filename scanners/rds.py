@@ -51,7 +51,10 @@ class RDSScanner(BaseScanner):
         except ClientError:
             return []
 
-    def _hourly_price(self, instance_class: str, engine: str) -> float:
+    def _hourly_price(
+        self, instance_class: str, engine: str, multi_az: bool = False
+    ) -> float:
+        deployment_option = "Multi-AZ" if multi_az else "Single-AZ"
         try:
             return get_rds_instance_price(
                 self.pricing_client,
@@ -59,6 +62,7 @@ class RDSScanner(BaseScanner):
                 instance_class,
                 self.region,
                 database_engine=_pricing_engine_name(engine),
+                deployment_option=deployment_option,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("RDS pricing failed for %s: %s", instance_class, exc)
@@ -80,7 +84,9 @@ class RDSScanner(BaseScanner):
                     iid = db.get("DBInstanceIdentifier", "")
                     cls_name = db.get("DBInstanceClass", "db.t3.micro")
                     engine = db.get("Engine", "mysql")
-                    hourly = self._hourly_price(cls_name, engine)
+                    multi_az = db.get("MultiAZ", False)
+                    deployment_option = "Multi-AZ" if multi_az else "Single-AZ"
+                    hourly = self._hourly_price(cls_name, engine, multi_az)
                     monthly = hourly * _HOURS_PER_MONTH
                     findings.append(
                         Finding(
@@ -88,12 +94,14 @@ class RDSScanner(BaseScanner):
                             resource_type="RDS",
                             region=self.region,
                             issue_type="stopped",
-                            description="RDS instance is stopped but still billed for storage (compute estimate)",
+                            description=f"RDS instance ({deployment_option}) is stopped but still billed for storage",
                             monthly_savings=round(monthly, 2),
                             severity="High" if monthly >= 100 else "Medium",
                             details={
                                 "db_instance_class": cls_name,
                                 "engine": engine,
+                                "multi_az": multi_az,
+                                "deployment_option": deployment_option,
                                 "allocated_storage": db.get("AllocatedStorage"),
                                 "tags": tags,
                             },
@@ -127,7 +135,9 @@ class RDSScanner(BaseScanner):
                         continue
                     cls_name = db.get("DBInstanceClass", "db.t3.micro")
                     engine = db.get("Engine", "mysql")
-                    hourly = self._hourly_price(cls_name, engine)
+                    multi_az = db.get("MultiAZ", False)
+                    deployment_option = "Multi-AZ" if multi_az else "Single-AZ"
+                    hourly = self._hourly_price(cls_name, engine, multi_az)
                     monthly = hourly * _HOURS_PER_MONTH
                     findings.append(
                         Finding(
@@ -135,13 +145,16 @@ class RDSScanner(BaseScanner):
                             resource_type="RDS",
                             region=self.region,
                             issue_type="zero_connections",
-                            description="No database connections observed in 14d (max metric)",
+                            description=f"No database connections observed in 14d ({deployment_option})",
                             monthly_savings=round(monthly * 0.6, 2),
                             severity="High" if monthly >= 150 else "Medium",
                             details={
                                 "db_instance_class": cls_name,
                                 "engine": engine,
+                                "multi_az": multi_az,
+                                "deployment_option": deployment_option,
                                 "max_connections_14d": max_conn,
+                                "allocated_storage": db.get("AllocatedStorage"),
                                 "tags": tags,
                             },
                         )

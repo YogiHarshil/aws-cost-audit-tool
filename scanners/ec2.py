@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from botocore.exceptions import ClientError
 
 from models.finding import Finding
 from scanners.base import BaseScanner
-from utils.pricing import get_ec2_instance_price
+from utils.pricing import get_ebs_volume_price, get_ec2_instance_price
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +61,17 @@ class EC2Scanner(BaseScanner):
                             continue
                         iid = inst.get("InstanceId", "")
                         itype = inst.get("InstanceType", "t3.micro")
+
+                        # Calculate actual EBS storage cost (not compute cost)
+                        attached_volumes = self._get_attached_volume_costs(ec2, inst)
+                        ebs_monthly = sum(v["monthly_cost"] for v in attached_volumes)
+
+                        # Compute cost is informational only (what it WOULD cost if started)
                         hourly = self._hourly_price(itype)
-                        monthly = hourly * _HOURS_PER_MONTH
-                        sev = "High" if monthly >= 100 else "Medium"
+                        compute_monthly = hourly * _HOURS_PER_MONTH
+
+                        # Savings = EBS cost only (stopped instances have zero compute cost)
+                        sev = "High" if ebs_monthly >= 50 else "Medium" if ebs_monthly >= 10 else "Low"
                         findings.append(
                             Finding(
                                 resource_id=iid,
@@ -72,14 +80,16 @@ class EC2Scanner(BaseScanner):
                                 issue_type="stopped",
                                 description=(
                                     f"Instance stopped ~{int(days)}d (>{_STOPPED_MIN_DAYS}d); "
-                                    f"still incurring EBS/root costs; compute savings estimate from on-demand rate"
+                                    f"no compute charges; attached EBS volumes cost ${ebs_monthly:.2f}/month"
                                 ),
-                                monthly_savings=round(monthly, 2),
+                                monthly_savings=round(ebs_monthly, 2),
                                 severity=sev,
                                 details={
                                     "instance_type": itype,
                                     "state_transition_reason": reason,
-                                    "estimated_stopped_days": round(days, 1),
+                                    "days_stopped": round(days, 1),
+                                    "attached_volumes": attached_volumes,
+                                    "compute_cost_when_running": round(compute_monthly, 2),
                                     "tags": tags or [],
                                 },
                             )
@@ -87,6 +97,50 @@ class EC2Scanner(BaseScanner):
         except ClientError as exc:
             logger.warning("EC2 stopped scan failed in %s: %s", self.region, exc)
         return findings
+
+    def _get_attached_volume_costs(
+        self, ec2: Any, instance: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Get EBS volume details and costs for all attached volumes."""
+        volumes: List[Dict[str, Any]] = []
+        block_mappings = instance.get("BlockDeviceMappings", [])
+        if not block_mappings:
+            return volumes
+
+        volume_ids = [
+            m["Ebs"]["VolumeId"]
+            for m in block_mappings
+            if m.get("Ebs", {}).get("VolumeId")
+        ]
+        if not volume_ids:
+            return volumes
+
+        try:
+            resp = ec2.describe_volumes(VolumeIds=volume_ids)
+            for vol in resp.get("Volumes", []):
+                vol_id = vol.get("VolumeId", "")
+                vol_type = vol.get("VolumeType", "gp3")
+                size_gb = int(vol.get("Size", 0))
+                try:
+                    gb_month_price = get_ebs_volume_price(
+                        self.pricing_client,
+                        self.pricing_cache,
+                        vol_type,
+                        self.region,
+                    )
+                except Exception as exc:
+                    logger.warning("EBS pricing failed for %s: %s", vol_id, exc)
+                    gb_month_price = 0.0
+                monthly_cost = size_gb * gb_month_price
+                volumes.append({
+                    "volume_id": vol_id,
+                    "volume_type": vol_type,
+                    "size_gb": size_gb,
+                    "monthly_cost": round(monthly_cost, 2),
+                })
+        except ClientError as exc:
+            logger.warning("describe_volumes failed: %s", exc)
+        return volumes
 
     def _hourly_price(self, instance_type: str) -> float:
         try:
