@@ -9,6 +9,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from scanners.base import exclude_tag_pairs_from_config, should_exclude_by_tags
+from scanners.compute_optimizer import scan_compute_optimizer
 from scanners.cost_explorer import CostExplorerScanner
 from scanners.ebs import EBSScanner
 from scanners.ec2 import EC2Scanner
@@ -16,7 +17,9 @@ from scanners.eip import EIPScanner
 from scanners.rds import RDSScanner
 from scanners.reservations import ReservationScanner
 from scanners.s3 import S3Scanner
+from scanners.savings_plans import scan_savings_plans
 from scanners.snapshots import SnapshotScanner
+from scanners.trusted_advisor import scan_trusted_advisor
 
 
 def _session_with_clients() -> tuple[MagicMock, dict]:
@@ -1088,3 +1091,268 @@ def test_snapshot_scanner_skips_dlm_managed() -> None:
 
     # DLM managed snapshots should be skipped
     assert len(findings) == 0
+
+
+# =============================================================================
+# Snapshot scanner: aws:dlm:lifecycle-policy-id tag (new primary DLM tag)
+# =============================================================================
+
+def test_snapshot_scanner_skips_dlm_lifecycle_policy_id():
+    """Snapshot with aws:dlm:lifecycle-policy-id tag should be skipped."""
+    session, clients = _session_with_clients()
+    # Pre-create the ec2 client
+    ec2 = session.client("ec2", region_name="us-east-1")
+
+    vol_paginator = MagicMock()
+    vol_paginator.paginate.return_value = [{"Volumes": []}]
+
+    img_paginator = MagicMock()
+    img_paginator.paginate.return_value = [{"Images": []}]
+
+    # Snapshot with primary DLM tag
+    snap_paginator = MagicMock()
+    snap_paginator.paginate.return_value = [
+        {
+            "Snapshots": [
+                {
+                    "SnapshotId": "snap-dlmpolicy123",
+                    "VolumeId": "vol-deleted",
+                    "VolumeSize": 200,
+                    "StartTime": datetime.now(timezone.utc) - timedelta(days=60),
+                    "Tags": [
+                        {"Key": "aws:dlm:lifecycle-policy-id", "Value": "policy-0123456789abcdef"}
+                    ],
+                }
+            ]
+        }
+    ]
+
+    def paginator_factory(op):
+        if op == "describe_volumes":
+            return vol_paginator
+        elif op == "describe_images":
+            return img_paginator
+        elif op == "describe_snapshots":
+            return snap_paginator
+        raise ValueError(f"Unknown operation: {op}")
+
+    ec2.get_paginator.side_effect = paginator_factory
+
+    scanner = SnapshotScanner(session, "us-east-1", [], MagicMock(), MagicMock())
+    findings = scanner.scan()
+
+    # Snapshot with aws:dlm:lifecycle-policy-id should be skipped
+    assert len(findings) == 0
+
+
+# =============================================================================
+# Savings Plans scanner tests
+# =============================================================================
+
+def test_savings_plans_low_coverage_generates_finding():
+    """Low Savings Plans coverage should generate a finding."""
+    session, clients = _session_with_clients()
+    # Pre-create the ce client
+    ce = session.client("ce", region_name="us-east-1")
+
+    # Mock low coverage response
+    ce.get_savings_plans_coverage.return_value = {
+        "SavingsPlansCoverages": [
+            {
+                "Coverage": {
+                    "SpendCoveredBySavingsPlans": "200.00",
+                    "OnDemandCost": "800.00",
+                    "TotalCost": "1000.00",
+                    "CoveragePercentage": "20.0",
+                },
+                "TimePeriod": {"Start": "2024-01-01", "End": "2024-01-31"},
+            }
+        ]
+    }
+
+    # Mock utilization (no issues)
+    ce.get_savings_plans_utilization.return_value = {
+        "Total": {
+            "Utilization": {
+                "UtilizationPercentage": "95.0",
+                "TotalCommitment": "100.00",
+                "UnusedCommitment": "5.00",
+            }
+        }
+    }
+
+    findings = scan_savings_plans(session)
+
+    # Should find low coverage
+    assert len(findings) >= 1
+    coverage_finding = next((f for f in findings if "coverage" in f.resource_id.lower()), None)
+    assert coverage_finding is not None
+    assert coverage_finding.monthly_savings > 0
+
+
+def test_savings_plans_empty_data_returns_empty():
+    """Empty Savings Plans data should return empty findings."""
+    session, clients = _session_with_clients()
+    ce = session.client("ce", region_name="us-east-1")
+
+    # Mock empty coverage
+    ce.get_savings_plans_coverage.return_value = {"SavingsPlansCoverages": []}
+    ce.get_savings_plans_utilization.return_value = {"Total": {}}
+
+    findings = scan_savings_plans(session)
+    assert findings == []
+
+
+def test_savings_plans_access_denied_returns_empty():
+    """AccessDeniedException should return empty findings gracefully."""
+    session, clients = _session_with_clients()
+    ce = session.client("ce", region_name="us-east-1")
+
+    # Both calls should raise access denied
+    ce.get_savings_plans_coverage.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
+        "GetSavingsPlansCoverage",
+    )
+    ce.get_savings_plans_utilization.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
+        "GetSavingsPlansUtilization",
+    )
+
+    findings = scan_savings_plans(session)
+    assert findings == []
+
+
+# =============================================================================
+# Compute Optimizer scanner tests
+# =============================================================================
+
+def test_compute_optimizer_not_opted_in_returns_empty():
+    """Compute Optimizer not Active should return empty findings."""
+    session, clients = _session_with_clients()
+    co = session.client("compute-optimizer", region_name="us-east-1")
+
+    # Mock inactive status
+    co.get_enrollment_status.return_value = {"status": "Inactive"}
+
+    findings = scan_compute_optimizer(session)
+    assert findings == []
+
+
+def test_compute_optimizer_over_provisioned_generates_finding():
+    """Over-provisioned instance should generate a finding."""
+    session, clients = _session_with_clients()
+    co = session.client("compute-optimizer", region_name="us-east-1")
+
+    # Mock active status
+    co.get_enrollment_status.return_value = {"status": "Active"}
+
+    # Mock over-provisioned recommendation
+    co.get_ec2_instance_recommendations.return_value = {
+        "instanceRecommendations": [
+            {
+                "instanceArn": "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+                "currentInstanceType": "m5.xlarge",
+                "finding": "Overprovisioned",
+                "findingReasonCodes": ["CPUOverprovisioned"],
+                "lookBackPeriodInDays": 14,
+                "utilizationMetrics": [
+                    {"name": "Cpu", "statistic": "Maximum", "value": 15.0}
+                ],
+                "recommendationOptions": [
+                    {
+                        "instanceType": "m5.large",
+                        "performanceRisk": 1.0,
+                        "rank": 1,
+                        "migrationEffort": "Low",
+                        "savingsOpportunity": {
+                            "savingsOpportunityPercentage": 50.0,
+                            "estimatedMonthlySavings": {
+                                "currency": "USD",
+                                "value": 75.0,
+                            },
+                        },
+                    }
+                ],
+            }
+        ],
+        "nextToken": None,
+    }
+
+    findings = scan_compute_optimizer(session)
+
+    assert len(findings) == 1
+    assert findings[0].resource_id == "i-1234567890abcdef0"
+    assert findings[0].monthly_savings == 75.0
+    assert "m5.large" in findings[0].description
+
+
+def test_compute_optimizer_access_denied_returns_empty():
+    """AccessDeniedException should return empty findings gracefully."""
+    session, clients = _session_with_clients()
+    co = session.client("compute-optimizer", region_name="us-east-1")
+
+    co.get_enrollment_status.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
+        "GetEnrollmentStatus",
+    )
+
+    findings = scan_compute_optimizer(session)
+    assert findings == []
+
+
+# =============================================================================
+# Trusted Advisor scanner tests
+# =============================================================================
+
+def test_trusted_advisor_subscription_required_returns_empty():
+    """SubscriptionRequiredException should return empty findings gracefully."""
+    session, clients = _session_with_clients()
+    ta = session.client("trustedadvisor", region_name="us-east-1")
+
+    ta.list_recommendations.side_effect = ClientError(
+        {"Error": {"Code": "SubscriptionRequiredException", "Message": "Requires Business Support"}},
+        "ListRecommendations",
+    )
+
+    findings = scan_trusted_advisor(session)
+    assert findings == []
+
+
+def test_trusted_advisor_warning_generates_finding():
+    """Trusted Advisor warning should generate a finding."""
+    session, clients = _session_with_clients()
+    ta = session.client("trustedadvisor", region_name="us-east-1")
+
+    # First call (status=warning) returns a recommendation
+    # Second call (status=error) returns empty
+    ta.list_recommendations.side_effect = [
+        {
+            "recommendationSummaries": [
+                {
+                    "id": "rec-123456",
+                    "name": "Low Utilization Amazon EC2 Instances",
+                    "status": "warning",
+                    "pillar": "cost_optimizing",
+                    "resourcesAggregates": {
+                        "okCount": 0,
+                        "warningCount": 5,
+                        "errorCount": 0,
+                    },
+                    "pillarSpecificAggregates": {
+                        "costOptimizing": {
+                            "estimatedMonthlySavings": 150.0,
+                        }
+                    },
+                }
+            ],
+            "nextToken": None,
+        },
+        {"recommendationSummaries": [], "nextToken": None},  # For status=error
+    ]
+
+    findings = scan_trusted_advisor(session)
+
+    assert len(findings) == 1
+    assert "rec-123456" in findings[0].resource_id
+    assert findings[0].monthly_savings == 150.0
+    assert findings[0].severity == "Medium"  # warning = Medium

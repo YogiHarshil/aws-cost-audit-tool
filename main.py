@@ -29,9 +29,12 @@ from scanners.ebs import EBSScanner
 from scanners.ec2 import EC2Scanner
 from scanners.eip import EIPScanner
 from scanners.rds import RDSScanner
+from scanners.compute_optimizer import scan_compute_optimizer
 from scanners.reservations import ReservationScanner
 from scanners.s3 import S3Scanner
+from scanners.savings_plans import scan_savings_plans
 from scanners.snapshots import SnapshotScanner
+from scanners.trusted_advisor import scan_trusted_advisor
 from utils.aws_client import create_client, create_session, discover_regions
 from utils.pricing import PricingCache
 
@@ -434,6 +437,39 @@ def run_audit(cfg: Config) -> int:
     except Exception as exc:
         logger.exception("RI coverage scan failed")
         partial_notes.append(f"reservations:{exc}")
+
+    # Savings Plans coverage and utilization scan (global, uses Cost Explorer)
+    print("Scanning Savings Plans coverage...", flush=True)
+    try:
+        sp_findings = scan_savings_plans(session)
+        all_findings.extend(sp_findings)
+        if sp_findings:
+            print(f"  Found {len(sp_findings)} Savings Plans findings", flush=True)
+    except Exception as exc:
+        logger.exception("Savings Plans scan failed")
+        partial_notes.append(f"savings_plans:{exc}")
+
+    # AWS Compute Optimizer rightsizing recommendations (optional, graceful skip)
+    print("Scanning Compute Optimizer recommendations...", flush=True)
+    try:
+        co_findings = scan_compute_optimizer(session)
+        all_findings.extend(co_findings)
+        if co_findings:
+            print(f"  Found {len(co_findings)} Compute Optimizer findings", flush=True)
+    except Exception as exc:
+        logger.exception("Compute Optimizer scan failed")
+        partial_notes.append(f"compute_optimizer:{exc}")
+
+    # AWS Trusted Advisor cost checks (optional, requires Business/Enterprise Support)
+    print("Scanning Trusted Advisor cost checks...", flush=True)
+    try:
+        ta_findings = scan_trusted_advisor(session)
+        all_findings.extend(ta_findings)
+        if ta_findings:
+            print(f"  Found {len(ta_findings)} Trusted Advisor findings", flush=True)
+    except Exception as exc:
+        logger.exception("Trusted Advisor scan failed")
+        partial_notes.append(f"trusted_advisor:{exc}")
 
     # Deduplicate findings (same resource from multiple scanners)
     pre_dedup_count = len(all_findings)

@@ -133,6 +133,16 @@
             font-size: 9.5pt;
         }
 
+        /* Prevent table rows from splitting across pages (WeasyPrint) */
+        table.findings thead {
+            display: table-header-group;
+        }
+
+        table.findings tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
         table.findings th {
             background: linear-gradient(180deg, #0d5c9e 0%, #0a4d84 100%);
             color: #fff;
@@ -194,6 +204,8 @@
             padding: 12px 14px;
             border-left: 4px solid #0d5c9e;
             background: #f7fafc;
+            break-inside: avoid;
+            page-break-inside: avoid;
         }
 
         .rec-block h3 {

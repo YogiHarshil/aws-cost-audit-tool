@@ -17,10 +17,16 @@ _SNAPSHOT_PRICE_PER_GB_MONTH = 0.05  # $0.05/GB/month for EBS snapshots
 _MIN_ORPHAN_AGE_DAYS = 30  # Only flag snapshots older than 30 days
 
 # Tags that indicate managed lifecycle (don't flag these)
+# See: https://docs.aws.amazon.com/ebs/latest/userguide/dlm-elements.html
 _MANAGED_TAG_KEYS = frozenset({
-    "aws:backup:source-resource-arn",  # AWS Backup managed
-    "dlm:managed",  # Data Lifecycle Manager managed
-    "aws:backup:recovery-point-arn",  # AWS Backup recovery point
+    # AWS Backup managed snapshots
+    "aws:backup:source-resource-arn",
+    "aws:backup:recovery-point-arn",
+    # Data Lifecycle Manager (DLM) managed snapshots - per AWS docs
+    "dlm:managed",
+    "aws:dlm:lifecycle-policy-id",      # Primary DLM tag - policy ID
+    "aws:dlm:lifecycle-schedule-name",  # Schedule that created snapshot
+    "aws:dlm:expirationTime",           # Age-based schedule expiration
 })
 
 

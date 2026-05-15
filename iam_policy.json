@@ -84,7 +84,9 @@
       "Action": [
         "ce:GetCostAndUsage",
         "ce:GetCostForecast",
-        "ce:GetAnomalies"
+        "ce:GetAnomalies",
+        "ce:GetSavingsPlansCoverage",
+        "ce:GetSavingsPlansUtilization"
       ],
       "Resource": "*"
     },
@@ -111,6 +113,24 @@
       "Effect": "Allow",
       "Action": [
         "iam:ListAccountAliases"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ComputeOptimizerReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "compute-optimizer:GetEnrollmentStatus",
+        "compute-optimizer:GetEC2InstanceRecommendations"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TrustedAdvisorReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "trustedadvisor:ListRecommendations",
+        "trustedadvisor:GetRecommendation"
       ],
       "Resource": "*"
     }
