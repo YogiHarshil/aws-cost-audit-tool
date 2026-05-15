@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 
-from botocore.exceptions import ProfileNotFound
+from botocore.exceptions import ClientError, ProfileNotFound
 
 from ai.recommender import Recommender
 from ai.summarizer import Summarizer
@@ -55,6 +55,13 @@ _SCANNER_LABELS = (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build and configure the CLI argument parser.
+
+    Returns:
+        Configured ArgumentParser with all supported options for the audit tool,
+        including AWS profile, region, role ARN, client name, AI toggle, output
+        directory, tag exclusion, and verbosity flags.
+    """
     p = argparse.ArgumentParser(
         description="Scan AWS accounts for cost waste and emit a PDF audit report.",
     )
@@ -77,6 +84,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse command-line arguments for the audit tool.
+
+    Args:
+        argv: List of argument strings to parse. If None, uses sys.argv[1:].
+
+    Returns:
+        Namespace containing all parsed arguments with their values.
+    """
     return build_parser().parse_args(argv)
 
 
