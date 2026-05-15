@@ -183,6 +183,7 @@ class Config:
     exclude_tags: List[Dict[str, str]]
     log_level: str
     verbose: bool
+    max_workers: int  # ThreadPool workers for parallel scanning
 
     @classmethod
     def from_env_and_args(
@@ -262,6 +263,13 @@ class Config:
                 "Set the key in .env or pass --skip-ai."
             )
 
+        # MAX_WORKERS for parallel scanning (default 5, safer for large accounts)
+        max_workers_raw = os.getenv("MAX_WORKERS", "5")
+        try:
+            max_workers = max(1, min(20, int(max_workers_raw)))
+        except ValueError:
+            max_workers = 5
+
         cfg = cls(
             aws_profile=aws_profile,
             aws_role_arn=aws_role_arn,
@@ -277,6 +285,7 @@ class Config:
             exclude_tags=exclude_tags,
             log_level=log_level,
             verbose=verbose,
+            max_workers=max_workers,
         )
         cfg._ensure_output_dir()
         return cfg
@@ -302,4 +311,5 @@ class Config:
             output_dir=self.output_dir,
             exclude_tags=list(self.exclude_tags),
             verbose=self.verbose,
+            max_workers=self.max_workers,
         )

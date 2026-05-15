@@ -83,6 +83,7 @@ class ScanConfig:
     output_dir: str = "./output"
     exclude_tags: Optional[List[Dict[str, str]]] = None  # Tag filters
     verbose: bool = False
+    max_workers: int = 5  # ThreadPool workers for parallel scanning
 
     def __post_init__(self):
         """Validate configuration."""

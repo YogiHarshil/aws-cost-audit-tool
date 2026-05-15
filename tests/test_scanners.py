@@ -882,3 +882,209 @@ def test_ri_scanner_skips_spot_instances() -> None:
 
     # Spot instances excluded, no findings
     assert len(findings) == 0
+
+
+def test_ec2_stopped_skips_spot_instances() -> None:
+    """Stopped Spot instances should NOT be flagged (AWS manages lifecycle)."""
+    session = MagicMock()
+    ec2 = MagicMock()
+    session.client.return_value = ec2
+
+    paginator = MagicMock()
+    paginator.paginate.return_value = [
+        {
+            "Reservations": [
+                {
+                    "Instances": [
+                        {
+                            "InstanceId": "i-spot123",
+                            "InstanceType": "t3.large",
+                            "InstanceLifecycle": "spot",  # Spot instance
+                            "StateTransitionReason": "User initiated (2024-01-01 00:00:00 GMT)",
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+    ec2.get_paginator.return_value = paginator
+
+    scanner = EC2Scanner(session, "us-east-1", [], MagicMock(), MagicMock())
+    findings = scanner._scan_stopped_instances()
+
+    # Spot instances should be skipped
+    assert len(findings) == 0
+
+
+def test_ec2_low_util_skips_new_instances() -> None:
+    """Instances <14 days old should NOT be flagged for low utilization."""
+    session = MagicMock()
+    ec2 = MagicMock()
+    cw = MagicMock()
+    session.client.side_effect = lambda svc, **kw: ec2 if svc == "ec2" else cw
+
+    # Instance launched 5 days ago (too new)
+    paginator = MagicMock()
+    paginator.paginate.return_value = [
+        {
+            "Reservations": [
+                {
+                    "Instances": [
+                        {
+                            "InstanceId": "i-new123",
+                            "InstanceType": "t3.large",
+                            "LaunchTime": datetime.now(timezone.utc) - timedelta(days=5),
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+    ec2.get_paginator.return_value = paginator
+
+    scanner = EC2Scanner(session, "us-east-1", [], MagicMock(), MagicMock())
+    findings = scanner._scan_low_utilization_instances()
+
+    # New instances should be skipped
+    assert len(findings) == 0
+
+
+def test_ec2_stopped_detects_asg_managed() -> None:
+    """ASG-managed stopped instances should include ASG info in details."""
+    session = MagicMock()
+    ec2 = MagicMock()
+    session.client.return_value = ec2
+
+    paginator = MagicMock()
+    paginator.paginate.return_value = [
+        {
+            "Reservations": [
+                {
+                    "Instances": [
+                        {
+                            "InstanceId": "i-asg123",
+                            "InstanceType": "t3.large",
+                            "StateTransitionReason": "User initiated (2024-01-01 00:00:00 GMT)",
+                            "Tags": [
+                                {"Key": "Name", "Value": "web-server"},
+                                {"Key": "aws:autoscaling:groupName", "Value": "prod-asg"},
+                            ],
+                            "BlockDeviceMappings": [{"Ebs": {"VolumeId": "vol-123"}}],
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+    ec2.get_paginator.return_value = paginator
+    ec2.describe_volumes.return_value = {
+        "Volumes": [{"VolumeId": "vol-123", "VolumeType": "gp3", "Size": 100}]
+    }
+
+    with patch("scanners.ec2.get_ebs_volume_price", return_value=0.08):
+        scanner = EC2Scanner(session, "us-east-1", [], MagicMock(), MagicMock())
+        findings = scanner._scan_stopped_instances()
+
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.details.get("asg_managed") is True
+    assert f.details.get("asg_name") == "prod-asg"
+    assert "ASG managed" in f.description
+
+
+def test_snapshot_scanner_skips_aws_backup_managed() -> None:
+    """Snapshots with AWS Backup tags should NOT be flagged."""
+    session = MagicMock()
+    ec2 = MagicMock()
+    session.client.return_value = ec2
+
+    # Return existing volumes
+    vol_paginator = MagicMock()
+    vol_paginator.paginate.return_value = [{"Volumes": []}]
+
+    # Return no AMIs
+    img_paginator = MagicMock()
+    img_paginator.paginate.return_value = [{"Images": []}]
+
+    # AWS Backup managed snapshot
+    snap_paginator = MagicMock()
+    snap_paginator.paginate.return_value = [
+        {
+            "Snapshots": [
+                {
+                    "SnapshotId": "snap-backup123",
+                    "VolumeId": "vol-deleted",
+                    "VolumeSize": 100,
+                    "StartTime": datetime.now(timezone.utc) - timedelta(days=60),
+                    "Tags": [
+                        {"Key": "aws:backup:source-resource-arn", "Value": "arn:aws:ec2:us-east-1:123456789012:volume/vol-abc"}
+                    ],
+                }
+            ]
+        }
+    ]
+
+    def paginator_factory(op):
+        if op == "describe_volumes":
+            return vol_paginator
+        elif op == "describe_images":
+            return img_paginator
+        elif op == "describe_snapshots":
+            return snap_paginator
+        raise ValueError(f"Unknown operation: {op}")
+
+    ec2.get_paginator.side_effect = paginator_factory
+
+    scanner = SnapshotScanner(session, "us-east-1", [], MagicMock(), MagicMock())
+    findings = scanner.scan()
+
+    # AWS Backup managed snapshots should be skipped
+    assert len(findings) == 0
+
+
+def test_snapshot_scanner_skips_dlm_managed() -> None:
+    """Snapshots with DLM tags should NOT be flagged."""
+    session = MagicMock()
+    ec2 = MagicMock()
+    session.client.return_value = ec2
+
+    vol_paginator = MagicMock()
+    vol_paginator.paginate.return_value = [{"Volumes": []}]
+
+    img_paginator = MagicMock()
+    img_paginator.paginate.return_value = [{"Images": []}]
+
+    # DLM managed snapshot
+    snap_paginator = MagicMock()
+    snap_paginator.paginate.return_value = [
+        {
+            "Snapshots": [
+                {
+                    "SnapshotId": "snap-dlm123",
+                    "VolumeId": "vol-deleted",
+                    "VolumeSize": 100,
+                    "StartTime": datetime.now(timezone.utc) - timedelta(days=60),
+                    "Tags": [
+                        {"Key": "dlm:managed", "Value": "true"}
+                    ],
+                }
+            ]
+        }
+    ]
+
+    def paginator_factory(op):
+        if op == "describe_volumes":
+            return vol_paginator
+        elif op == "describe_images":
+            return img_paginator
+        elif op == "describe_snapshots":
+            return snap_paginator
+        raise ValueError(f"Unknown operation: {op}")
+
+    ec2.get_paginator.side_effect = paginator_factory
+
+    scanner = SnapshotScanner(session, "us-east-1", [], MagicMock(), MagicMock())
+    findings = scanner.scan()
+
+    # DLM managed snapshots should be skipped
+    assert len(findings) == 0

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from botocore.exceptions import ClientError
 
@@ -15,6 +15,39 @@ logger = logging.getLogger(__name__)
 
 _SNAPSHOT_PRICE_PER_GB_MONTH = 0.05  # $0.05/GB/month for EBS snapshots
 _MIN_ORPHAN_AGE_DAYS = 30  # Only flag snapshots older than 30 days
+
+# Tags that indicate managed lifecycle (don't flag these)
+_MANAGED_TAG_KEYS = frozenset({
+    "aws:backup:source-resource-arn",  # AWS Backup managed
+    "dlm:managed",  # Data Lifecycle Manager managed
+    "aws:backup:recovery-point-arn",  # AWS Backup recovery point
+})
+
+
+def _is_managed_snapshot(tags: Optional[List[Dict[str, str]]]) -> Tuple[bool, Optional[str]]:
+    """Check if snapshot is managed by AWS Backup or DLM.
+
+    Returns:
+        (is_managed, manager_name): manager_name is 'AWS Backup' or 'DLM' if managed.
+    """
+    if not tags:
+        return False, None
+
+    for tag in tags:
+        key = tag.get("Key", "")
+        if key in _MANAGED_TAG_KEYS:
+            if "backup" in key.lower():
+                return True, "AWS Backup"
+            if "dlm" in key.lower():
+                return True, "Data Lifecycle Manager"
+    return False, None
+
+
+def _is_cross_region_copy(description: Optional[str]) -> bool:
+    """Check if snapshot is a cross-region copy."""
+    if not description:
+        return False
+    return "copied from" in description.lower() or "created by copysnapshot" in description.lower()
 
 
 class SnapshotScanner(BaseScanner):
@@ -90,6 +123,7 @@ class SnapshotScanner(BaseScanner):
         start_time = snap.get("StartTime")
         size_gb = int(snap.get("VolumeSize", 0))
         tags = snap.get("Tags")
+        description_text = snap.get("Description", "")
 
         # Skip if this snapshot backs an AMI
         if snap_id in ami_snapshot_ids:
@@ -105,6 +139,14 @@ class SnapshotScanner(BaseScanner):
 
         # Skip if excluded by tags
         if self._tags_excluded(tags):
+            return None
+
+        # Skip AWS Backup or DLM managed snapshots (lifecycle managed automatically)
+        is_managed, manager = _is_managed_snapshot(tags)
+        if is_managed:
+            logger.debug(
+                "Skipping snapshot %s: managed by %s", snap_id, manager
+            )
             return None
 
         # Calculate age
@@ -135,6 +177,9 @@ class SnapshotScanner(BaseScanner):
                     name = t.get("Value", "")
                     break
 
+        # Note cross-region copies in details
+        is_copy = _is_cross_region_copy(description_text)
+
         return Finding(
             resource_id=snap_id,
             resource_type="EBS Snapshot",
@@ -152,9 +197,10 @@ class SnapshotScanner(BaseScanner):
                 "size_gb": size_gb,
                 "age_days": age_days,
                 "start_time": start_time.isoformat() if start_time else None,
-                "description": snap.get("Description", ""),
+                "description": description_text,
                 "encrypted": snap.get("Encrypted", False),
                 "name": name,
+                "is_cross_region_copy": is_copy,
                 "tags": tags or [],
             },
         )

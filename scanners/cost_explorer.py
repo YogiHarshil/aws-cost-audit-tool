@@ -1,4 +1,4 @@
-"""Cost Explorer scanner (service spend and simple month-over-month trend)."""
+"""Cost Explorer scanner (service spend, month-over-month trend, and anomalies)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from models.finding import Finding
 
 logger = logging.getLogger(__name__)
 
+_ANOMALY_LOOKBACK_DAYS = 30
+
 
 class CostExplorerScanner:
     """Account-level cost signals (does not inherit :class:`BaseScanner`)."""
@@ -22,8 +24,10 @@ class CostExplorerScanner:
         self.ce = session.client("ce", region_name="us-east-1")
 
     def scan(self) -> List[Finding]:
-        """Return findings when spend trend crosses simple thresholds."""
+        """Return findings when spend trend crosses simple thresholds or anomalies detected."""
         findings: List[Finding] = []
+
+        # Check month-over-month trend
         try:
             trend = self.get_month_over_month_trend()
             if trend.get("increase_pct") is not None and trend["increase_pct"] > 20:
@@ -44,7 +48,62 @@ class CostExplorerScanner:
                 )
         except ClientError as exc:
             logger.warning("Cost Explorer trend scan failed: %s", exc)
+
+        # Check for cost anomalies (AWS ML-detected unusual spend)
+        try:
+            anomalies = self.get_cost_anomalies()
+            for anomaly in anomalies:
+                impact = anomaly.get("impact", {})
+                total_impact = float(impact.get("totalImpact", 0))
+                if total_impact < 10:  # Skip trivial anomalies
+                    continue
+
+                findings.append(
+                    Finding(
+                        resource_id=f"anomaly-{anomaly.get('anomalyId', 'unknown')[:8]}",
+                        resource_type="Cost Explorer",
+                        region="global",
+                        issue_type="cost_anomaly",
+                        description=(
+                            f"Cost anomaly detected: ${total_impact:.0f} unexpected spend "
+                            f"({anomaly.get('anomalyScore', {}).get('currentScore', 0):.0f}% confidence)"
+                        ),
+                        monthly_savings=0.0,  # Anomalies flag issues, not direct savings
+                        severity="High" if total_impact >= 100 else "Medium",
+                        details={
+                            "anomaly_id": anomaly.get("anomalyId"),
+                            "total_impact": total_impact,
+                            "anomaly_score": anomaly.get("anomalyScore"),
+                            "root_causes": anomaly.get("rootCauses", []),
+                            "start_date": anomaly.get("anomalyStartDate"),
+                            "end_date": anomaly.get("anomalyEndDate"),
+                        },
+                    )
+                )
+        except ClientError as exc:
+            # get_anomalies may not be available (requires Cost Anomaly Detection setup)
+            logger.debug("Cost anomaly detection unavailable: %s", exc)
+
         return findings
+
+    def get_cost_anomalies(self) -> List[Dict[str, Any]]:
+        """Get recent cost anomalies from AWS Cost Anomaly Detection."""
+        end = date.today()
+        start = end - timedelta(days=_ANOMALY_LOOKBACK_DAYS)
+
+        try:
+            resp = self.ce.get_anomalies(
+                DateInterval={
+                    "StartDate": start.isoformat(),
+                    "EndDate": end.isoformat(),
+                },
+                MaxResults=10,
+            )
+            return resp.get("Anomalies", [])
+        except ClientError as exc:
+            # Cost Anomaly Detection may not be configured
+            logger.debug("get_anomalies failed: %s", exc)
+            return []
 
     def get_90_day_spend(self) -> Dict[str, Any]:
         """Return blended cost grouped by SERVICE for the last ~90 days."""

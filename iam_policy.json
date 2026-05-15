@@ -48,6 +48,8 @@
       "Action": [
         "rds:DescribeDBInstances",
         "rds:DescribeDBClusters",
+        "rds:DescribeDBProxies",
+        "rds:DescribeDBProxyTargets",
         "rds:ListTagsForResource"
       ],
       "Resource": "*"
@@ -61,7 +63,8 @@
         "s3:GetBucketLifecycleConfiguration",
         "s3:GetBucketTagging",
         "s3:GetBucketVersioning",
-        "s3:GetBucketIntelligentTieringConfiguration"
+        "s3:GetBucketIntelligentTieringConfiguration",
+        "s3:GetObjectLockConfiguration"
       ],
       "Resource": "*"
     },
@@ -80,7 +83,8 @@
       "Effect": "Allow",
       "Action": [
         "ce:GetCostAndUsage",
-        "ce:GetCostForecast"
+        "ce:GetCostForecast",
+        "ce:GetAnomalies"
       ],
       "Resource": "*"
     },

@@ -39,12 +39,26 @@ class S3Scanner(BaseScanner):
         except ClientError:
             return []
 
+    def _has_object_lock(self, s3: Any, bucket: str) -> bool:
+        """Check if bucket has Object Lock enabled (lifecycle restricted)."""
+        try:
+            resp = s3.get_object_lock_configuration(Bucket=bucket)
+            config = resp.get("ObjectLockConfiguration", {})
+            return config.get("ObjectLockEnabled") == "Enabled"
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code == "ObjectLockConfigurationNotFoundError":
+                return False
+            logger.debug("Object lock check failed for %s: %s", bucket, exc)
+            return False
+
     def _scan_missing_lifecycle(self) -> List[Finding]:
         findings: List[Finding] = []
         s3 = self.session.client("s3", region_name=self.region)
         cw = self.session.client("cloudwatch", region_name=self.region)
         end = datetime.now(timezone.utc)
-        start = end - timedelta(days=2)
+        # Use 3-day window for CloudWatch (metrics update once/day at midnight UTC)
+        start = end - timedelta(days=3)
         try:
             resp = s3.list_buckets()
             for bkt in resp.get("Buckets", []):
@@ -57,10 +71,24 @@ class S3Scanner(BaseScanner):
                 tags = self._bucket_tags(s3, name)
                 if self._tags_excluded(tags):
                     continue
+
+                # Skip buckets with Object Lock (lifecycle policies restricted)
+                if self._has_object_lock(s3, name):
+                    logger.debug("Skipping bucket %s: Object Lock enabled", name)
+                    continue
+
                 try:
                     s3.get_bucket_lifecycle_configuration(Bucket=name)
                 except ClientError as exc:
                     code = exc.response.get("Error", {}).get("Code", "")
+
+                    # Handle Requester Pays buckets (AccessDenied on lifecycle check)
+                    if code == "AccessDenied":
+                        logger.debug(
+                            "Skipping bucket %s: AccessDenied (possibly Requester Pays)", name
+                        )
+                        continue
+
                     if code in ("NoSuchLifecycleConfiguration", "LifecycleConfigurationNotFound"):
                         # Get actual bucket size from CloudWatch
                         size_bytes = self._get_bucket_size_bytes(cw, name, start, end)

@@ -427,6 +427,52 @@ def create_sample_findings() -> list[Finding]:
         ai_explanation="You have 4 m5.large instances (3 in us-east-1, 1 in us-west-2) running on-demand for 30+ days. These are stable production workloads. Purchasing 4x 1-year no-upfront Regional RIs saves $103.30/month (37%).",
     ))
 
+    # -------------------------------------------------------------------------
+    # Cost Anomaly Finding (1 finding) - AWS ML-detected
+    # -------------------------------------------------------------------------
+    findings.append(Finding(
+        resource_id="anomaly-abc12345",
+        resource_type="Cost Explorer",
+        region="global",
+        issue_type="cost_anomaly",
+        description="Cost anomaly detected: $187 unexpected spend (92% confidence)",
+        monthly_savings=0.0,  # Anomalies flag issues, not direct savings
+        severity="Medium",
+        details={
+            "anomaly_id": "abc12345-6789-0abc-def0-123456789012",
+            "total_impact": 187.50,
+            "anomaly_score": {"currentScore": 92.4},
+            "root_causes": [
+                {"service": "Amazon EC2", "region": "us-east-1", "linkedAccount": "891234567890"}
+            ],
+            "start_date": "2025-05-10",
+            "end_date": "2025-05-12",
+        },
+        ai_explanation="AWS Cost Anomaly Detection identified $187.50 in unexpected EC2 spend between May 10-12. This correlates with the new analytics batch jobs deployed on May 9th. Review EC2 usage in us-east-1 and consider Spot instances for batch workloads.",
+    ))
+
+    # -------------------------------------------------------------------------
+    # ASG-managed low utilization instance (demonstrates new ASG handling)
+    # -------------------------------------------------------------------------
+    findings.append(Finding(
+        resource_id="i-asg-worker-01",
+        resource_type="EC2",
+        region="us-east-1",
+        issue_type="low_utilization",
+        description="Average CPU 3.2% over 14d (<5%); ASG managed (prod-worker-asg) - review scaling policies instead of direct termination",
+        monthly_savings=70.08,
+        severity="Medium",
+        details={
+            "instance_type": "m5.large",
+            "avg_cpu_14d": 3.2,
+            "recommended_action": "Review ASG scaling policies",
+            "asg_managed": True,
+            "asg_name": "prod-worker-asg",
+            "tags": [{"Key": "Name", "Value": "prod-worker-01"}, {"Key": "aws:autoscaling:groupName", "Value": "prod-worker-asg"}],
+        },
+        ai_explanation="This m5.large instance is managed by Auto Scaling Group 'prod-worker-asg' and shows 3.2% average CPU. Do NOT terminate directly - review ASG min/max capacity and scaling policies instead. Consider reducing minimum instances during off-peak hours.",
+    ))
+
     return findings
 
 

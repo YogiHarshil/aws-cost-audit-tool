@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from botocore.exceptions import ClientError
 
@@ -38,6 +38,12 @@ def _pricing_engine_name(engine: str) -> str:
     return mapping.get(e, "MySQL")
 
 
+def _is_aurora_engine(engine: str) -> bool:
+    """Check if engine is Aurora (different pricing model)."""
+    e = (engine or "").lower()
+    return "aurora" in e
+
+
 class RDSScanner(BaseScanner):
     """Detect idle or stopped RDS DB instances."""
 
@@ -50,6 +56,31 @@ class RDSScanner(BaseScanner):
             return resp.get("TagList", [])
         except ClientError:
             return []
+
+    def _get_proxy_target_instances(self, rds: Any) -> Set[str]:
+        """Get set of DB instance identifiers that are targets of RDS Proxies."""
+        proxy_targets: Set[str] = set()
+        try:
+            # List all proxies in this region
+            paginator = rds.get_paginator("describe_db_proxies")
+            for page in paginator.paginate():
+                for proxy in page.get("DBProxies", []):
+                    proxy_name = proxy.get("DBProxyName")
+                    if not proxy_name:
+                        continue
+                    # Get targets for this proxy
+                    try:
+                        targets_resp = rds.describe_db_proxy_targets(DBProxyName=proxy_name)
+                        for target in targets_resp.get("Targets", []):
+                            target_id = target.get("RdsResourceId") or target.get("TargetArn", "").split(":")[-1]
+                            if target_id:
+                                proxy_targets.add(target_id)
+                    except ClientError as exc:
+                        logger.debug("describe_db_proxy_targets failed for %s: %s", proxy_name, exc)
+        except ClientError as exc:
+            # RDS Proxy may not be available in all regions or account may not use it
+            logger.debug("describe_db_proxies unavailable in %s: %s", self.region, exc)
+        return proxy_targets
 
     def _hourly_price(
         self, instance_class: str, engine: str, multi_az: bool = False
@@ -117,6 +148,10 @@ class RDSScanner(BaseScanner):
         cw = self.session.client("cloudwatch", region_name=self.region)
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=14)
+
+        # Get instances behind RDS Proxy (zero connections may be normal)
+        proxy_targets = self._get_proxy_target_instances(rds)
+
         try:
             paginator = rds.get_paginator("describe_db_instances")
             for page in paginator.paginate():
@@ -127,36 +162,84 @@ class RDSScanner(BaseScanner):
                     tags = self._db_tags(rds, arn) if arn else []
                     if self._tags_excluded(tags):
                         continue
+
                     iid = db.get("DBInstanceIdentifier", "")
+                    engine = db.get("Engine", "mysql")
+                    cls_name = db.get("DBInstanceClass", "db.t3.micro")
+                    multi_az = db.get("MultiAZ", False)
+                    deployment_option = "Multi-AZ" if multi_az else "Single-AZ"
+
+                    # Handle Aurora clusters separately (different pricing model)
+                    is_aurora = _is_aurora_engine(engine)
+
                     max_conn = self._max_db_connections(cw, iid, start, end)
                     if max_conn is None:
                         continue
                     if max_conn > 0:
                         continue
-                    cls_name = db.get("DBInstanceClass", "db.t3.micro")
-                    engine = db.get("Engine", "mysql")
-                    multi_az = db.get("MultiAZ", False)
-                    deployment_option = "Multi-AZ" if multi_az else "Single-AZ"
-                    hourly = self._hourly_price(cls_name, engine, multi_az)
-                    monthly = hourly * _HOURS_PER_MONTH
+
+                    # Check if behind RDS Proxy
+                    has_proxy = iid in proxy_targets
+
+                    if is_aurora:
+                        # Aurora uses different pricing (ACU for serverless, or instance for provisioned)
+                        # Don't calculate exact savings, flag for manual review
+                        description = (
+                            f"Aurora instance ({engine}) has no connections in 14d. "
+                            "Verify usage via Performance Insights - pricing differs from standard RDS."
+                        )
+                        monthly_savings = 0.0  # Can't accurately estimate Aurora savings
+                        severity = "Medium" if has_proxy else "High"
+                        details: Dict[str, Any] = {
+                            "db_instance_class": cls_name,
+                            "engine": engine,
+                            "is_aurora": True,
+                            "multi_az": multi_az,
+                            "deployment_option": deployment_option,
+                            "max_connections_14d": max_conn,
+                            "allocated_storage": db.get("AllocatedStorage"),
+                            "has_rds_proxy": has_proxy,
+                            "recommended_action": "Verify usage via Performance Insights",
+                            "tags": tags,
+                        }
+                    else:
+                        hourly = self._hourly_price(cls_name, engine, multi_az)
+                        monthly = hourly * _HOURS_PER_MONTH
+
+                        if has_proxy:
+                            # Zero connections may be normal with proxy (connection pooling)
+                            description = (
+                                f"No direct connections in 14d ({deployment_option}), "
+                                f"but has RDS Proxy - verify proxy metrics"
+                            )
+                            severity = "Low"  # Lower severity when proxy present
+                        else:
+                            description = f"No database connections observed in 14d ({deployment_option})"
+                            severity = "High" if monthly >= 150 else "Medium"
+
+                        monthly_savings = round(monthly * 0.6, 2)
+                        details = {
+                            "db_instance_class": cls_name,
+                            "engine": engine,
+                            "is_aurora": False,
+                            "multi_az": multi_az,
+                            "deployment_option": deployment_option,
+                            "max_connections_14d": max_conn,
+                            "allocated_storage": db.get("AllocatedStorage"),
+                            "has_rds_proxy": has_proxy,
+                            "tags": tags,
+                        }
+
                     findings.append(
                         Finding(
                             resource_id=iid,
                             resource_type="RDS",
                             region=self.region,
                             issue_type="zero_connections",
-                            description=f"No database connections observed in 14d ({deployment_option})",
-                            monthly_savings=round(monthly * 0.6, 2),
-                            severity="High" if monthly >= 150 else "Medium",
-                            details={
-                                "db_instance_class": cls_name,
-                                "engine": engine,
-                                "multi_az": multi_az,
-                                "deployment_option": deployment_option,
-                                "max_connections_14d": max_conn,
-                                "allocated_storage": db.get("AllocatedStorage"),
-                                "tags": tags,
-                            },
+                            description=description,
+                            monthly_savings=monthly_savings,
+                            severity=severity,
+                            details=details,
                         )
                     )
         except ClientError as exc:
