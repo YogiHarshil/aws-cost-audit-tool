@@ -1,9 +1,17 @@
 # AWS Cost Audit Tool
 
+> **Version:** 3.0.0 | **Status:** Production Ready | **Phases 1-7:** Complete
+
 ## What this project is
 Python CLI tool that scans AWS accounts for wasted spend and generates
 professional PDF audit reports with AI summaries. Productized service —
 built once, run for multiple clients at $800–$1,500 per audit.
+
+## Quick Stats
+- **9 AWS Scanners** covering EC2, RDS, EBS, EIP, S3, Snapshots, Cost Explorer, RI, Savings Plans, Compute Optimizer, Trusted Advisor
+- **64 Tests** with mocked boto3 (no real AWS calls)
+- **38 IAM Actions** (all read-only)
+- **~3,500 Lines** of production code
 
 ## Tech Stack (locked — do not change)
 - Python 3.12 + boto3 (AWS scanning)
@@ -90,6 +98,12 @@ iam_policy.json     - 38 read-only IAM actions
 - Phase 5: main.py CLI + end-to-end
 - Phase 6: Sample report for sales demos
 - Phase 7: Advanced scanners (savings_plans, compute_optimizer, trusted_advisor)
+
+## Next phases (see NEXT_PHASE.md)
+- Phase 8: Production deployment (Docker, ECS, CI/CD)
+- Phase 9: Enterprise features (multi-account, scheduled scans)
+- Phase 10: SaaS platform (FastAPI, Supabase, Stripe)
+- Phase 11: Advanced analytics (anomaly detection, forecasting)
 
 ## Session start
 Read this file, run `git log --oneline -5`, confirm in 3 lines, wait for instructions.
