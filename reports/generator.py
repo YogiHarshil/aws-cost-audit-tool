@@ -121,6 +121,10 @@ def render_html(report: Report, *, template_name: str = "report.html") -> str:
             "(--skip-ai, missing API key, or generation unavailable)."
         )
 
+    safe_findings_count = sum(
+        1 for f in report.findings if getattr(f, "safe_to_delete", "UNKNOWN") == "SAFE"
+    )
+
     tpl = env.get_template(template_name)
     return tpl.render(
         report=report,
@@ -138,4 +142,5 @@ def render_html(report: Report, *, template_name: str = "report.html") -> str:
         findings_by_severity=report.findings_by_severity,
         findings_by_type=report.findings_by_type,
         findings_count=report.findings_count,
+        safe_findings_count=safe_findings_count,
     )

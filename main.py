@@ -36,6 +36,7 @@ from scanners.savings_plans import scan_savings_plans
 from scanners.snapshots import SnapshotScanner
 from scanners.trusted_advisor import scan_trusted_advisor
 from utils.aws_client import create_client, create_session, discover_regions
+from utils.confidence import calculate_confidence
 from utils.pricing import PricingCache
 
 logger = logging.getLogger(__name__)
@@ -477,6 +478,19 @@ def run_audit(cfg: Config) -> int:
     if pre_dedup_count != len(all_findings):
         print(f"  Deduplicated: {pre_dedup_count} -> {len(all_findings)} findings", flush=True)
 
+    # Score each finding for safe-to-delete confidence
+    print("Calculating safe-to-delete confidence scores...", flush=True)
+    scored = 0
+    for f in all_findings:
+        score, reasons, label = calculate_confidence(f, session)
+        f.confidence_score = score
+        f.confidence_reasons = reasons
+        f.safe_to_delete = label
+        if label != "UNKNOWN":
+            scored += 1
+    safe_count = sum(1 for f in all_findings if f.safe_to_delete == "SAFE")
+    print(f"  Scored {scored} findings — {safe_count} rated SAFE TO DELETE", flush=True)
+
     scan_elapsed = time.perf_counter() - t0
     scan_date = datetime.now(timezone.utc)
 
@@ -562,6 +576,11 @@ def _print_summary(report: Report, pdf_path: Path, elapsed: float) -> None:
     roi_pct = ((annual_savings - audit_fee) / audit_fee * 100) if audit_fee > 0 else 0
     payback_days = (audit_fee / (report.total_savings / 30)) if report.total_savings > 0 else float("inf")
 
+    # Confidence summary
+    safe_count = sum(1 for f in report.findings if f.safe_to_delete == "SAFE")
+    caution_count = sum(1 for f in report.findings if f.safe_to_delete == "CAUTION")
+    risky_count = sum(1 for f in report.findings if f.safe_to_delete == "RISKY")
+
     print("\n" + "=" * 50, flush=True)
     print("           AUDIT COMPLETE", flush=True)
     print("=" * 50, flush=True)
@@ -579,6 +598,18 @@ def _print_summary(report: Report, pdf_path: Path, elapsed: float) -> None:
         f"(High: {by_sev['High']}, Medium: {by_sev['Medium']}, Low: {by_sev['Low']})",
         flush=True,
     )
+    print(
+        f"Confidence: SAFE={safe_count}  CAUTION={caution_count}  RISKY={risky_count}",
+        flush=True,
+    )
+    if safe_count:
+        safe_savings = sum(
+            f.monthly_savings for f in report.findings if f.safe_to_delete == "SAFE"
+        )
+        print(
+            f"  → {safe_count} findings rated SAFE TO DELETE (${safe_savings:,.2f}/month)",
+            flush=True,
+        )
     print(f"Duration: {elapsed:.1f}s", flush=True)
     print("=" * 50, flush=True)
 

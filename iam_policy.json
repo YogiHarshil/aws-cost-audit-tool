@@ -133,6 +133,14 @@
         "trustedadvisor:GetRecommendation"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "CloudTrailReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:LookupEvents"
+      ],
+      "Resource": "*"
     }
   ]
 }

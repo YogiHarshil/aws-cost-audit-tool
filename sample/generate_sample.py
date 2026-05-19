@@ -113,8 +113,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="stopped",
         description="Instance stopped ~15d (>7d); no compute charges; attached EBS volumes cost $8.00/month",
-        monthly_savings=8.00,  # 100GB gp3 @ $0.08/GB
+        monthly_savings=8.00,
         severity="Low",
+        confidence_score=65,
+        confidence_reasons=["Dev/test naming pattern ('staging' in name)", "Stopped 15 days ago (<30d — moderate signal)", "No StartInstances event in CloudTrail (last 30 days)"],
+        safe_to_delete="CAUTION",
         details={
             "instance_type": "t3.large",
             "state_transition_reason": "User initiated (2025-04-30 09:15:00 GMT)",
@@ -122,7 +125,7 @@ def create_sample_findings() -> list[Finding]:
             "attached_volumes": [
                 {"volume_id": "vol-0a1b2c3d", "volume_type": "gp3", "size_gb": 100, "monthly_cost": 8.00}
             ],
-            "compute_cost_when_running": 60.74,  # What it WOULD cost if started
+            "compute_cost_when_running": 60.74,
             "tags": [{"Key": "Name", "Value": "web-server-staging-01"}, {"Key": "Environment", "Value": "Staging"}],
         },
         ai_explanation="This t3.large instance has been stopped for 15 days with zero compute charges. The attached 100GB gp3 volume costs $8.00/month. Terminate the instance and delete the volume after verifying no data recovery is needed.",
@@ -134,8 +137,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="stopped",
         description="Instance stopped ~28d (>7d); no compute charges; attached EBS volumes cost $12.00/month",
-        monthly_savings=12.00,  # 150GB gp3 @ $0.08/GB
+        monthly_savings=12.00,
         severity="Medium",
+        confidence_score=82,
+        confidence_reasons=["Dev/test naming pattern ('dev' in name)", "Stopped 28 days ago (>30d signal)", "No StartInstances event in CloudTrail (last 30 days)"],
+        safe_to_delete="SAFE",
         details={
             "instance_type": "m5.large",
             "state_transition_reason": "User initiated (2025-04-17 14:22:00 GMT)",
@@ -155,8 +161,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-2",
         issue_type="stopped",
         description="Instance stopped ~45d (>7d); no compute charges; attached EBS volumes cost $8.00/month",
-        monthly_savings=8.00,  # 100GB gp2 @ $0.10/GB = $10, but using gp3 pricing
+        monthly_savings=8.00,
         severity="Low",
+        confidence_score=87,
+        confidence_reasons=["Stopped 45 days ago (>30d)", "Old/migration naming pattern ('legacy' in name)", "No StartInstances event in CloudTrail (last 30 days)"],
+        safe_to_delete="SAFE",
         details={
             "instance_type": "t3.xlarge",
             "state_transition_reason": "User initiated (2025-03-31 18:45:00 GMT)",
@@ -181,6 +190,9 @@ def create_sample_findings() -> list[Finding]:
         description="Average CPU 2.1% over 14d (<5%); consider rightsizing or stopping non-prod",
         monthly_savings=236.00,
         severity="Medium",
+        confidence_score=25,
+        confidence_reasons=["Production naming pattern ('prod' in name) — high risk", "Running instance requires more verification before action"],
+        safe_to_delete="RISKY",
         details={
             "instance_type": "t3.xlarge",
             "avg_cpu_14d": 2.1,
@@ -197,6 +209,9 @@ def create_sample_findings() -> list[Finding]:
         description="Average CPU 1.8% over 14d (<5%); consider rightsizing or stopping non-prod",
         monthly_savings=236.00,
         severity="Medium",
+        confidence_score=20,
+        confidence_reasons=["Production naming pattern ('prod' in name) — high risk", "Avg CPU 1.8% over 14 days (extremely idle)"],
+        safe_to_delete="RISKY",
         details={
             "instance_type": "m5.2xlarge",
             "avg_cpu_14d": 1.8,
@@ -214,8 +229,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="zero_connections",
         description="No database connections observed in 14d (Multi-AZ)",
-        monthly_savings=205.20,  # $342 * 0.6 for zero_connections finding
+        monthly_savings=205.20,
         severity="High",
+        confidence_score=30,
+        confidence_reasons=["Multi-AZ deployment — production configuration, verify before deleting", "Production naming pattern ('prod' in name) — caution"],
+        safe_to_delete="RISKY",
         details={
             "db_instance_class": "db.m5.large",
             "engine": "postgres",
@@ -234,8 +252,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="stopped",
         description="RDS instance (Single-AZ) is stopped but still billed for storage",
-        monthly_savings=59.86,  # db.t3.medium Single-AZ ~$0.082/hr * 730
+        monthly_savings=59.86,
         severity="Medium",
+        confidence_score=65,
+        confidence_reasons=["Dev/test naming pattern ('staging' in name)", "Single-AZ — not a production HA config"],
+        safe_to_delete="CAUTION",
         details={
             "db_instance_class": "db.t3.medium",
             "engine": "mysql",
@@ -250,15 +271,15 @@ def create_sample_findings() -> list[Finding]:
     # -------------------------------------------------------------------------
     # EBS Unattached Volumes (5 findings)
     # -------------------------------------------------------------------------
-    ebs_volumes = [
-        ("vol-0a1b2c3d4e5f6a1b2", 20, "gp2", 2.00, "Low", "backup-temp-vol"),
-        ("vol-0c3d4e5f6g7h8i9j0", 50, "gp3", 4.00, "Low", "dev-data-vol"),
-        ("vol-0e5f6g7h8i9j0k1l2", 100, "gp2", 10.00, "Medium", "old-app-storage"),
-        ("vol-0g7h8i9j0k1l2m3n4", 200, "gp3", 16.00, "Medium", "migration-snapshot"),
-        ("vol-0i9j0k1l2m3n4o5p6", 500, "io1", 57.00, "High", "database-backup-legacy"),
+    _ebs_confidence = [
+        ("vol-0a1b2c3d4e5f6a1b2", 20, "gp2", 2.00, "Low",  "backup-temp-vol",        84, ["Temp/backup naming pattern ('backup','temp' in name)", "No snapshot exists for this volume"], "SAFE"),
+        ("vol-0c3d4e5f6g7h8i9j0", 50, "gp3", 4.00, "Low",  "dev-data-vol",          88, ["Dev/test naming pattern ('dev' in name)", "No snapshot exists for this volume"], "SAFE"),
+        ("vol-0e5f6g7h8i9j0k1l2", 100, "gp2", 10.00, "Medium", "old-app-storage",    80, ["Old naming pattern ('old' in name)", "No snapshot exists for this volume"], "SAFE"),
+        ("vol-0g7h8i9j0k1l2m3n4", 200, "gp3", 16.00, "Medium", "migration-snapshot", 72, ["Volume unattached for 45+ days", "Volume has 1 snapshot(s) — data recoverable if needed"], "CAUTION"),
+        ("vol-0i9j0k1l2m3n4o5p6", 500, "io1", 57.00, "High",  "database-backup-legacy", 55, ["Production/data naming pattern ('data' in name) — check before deleting", "Volume has 2 snapshot(s) — data recoverable if needed"], "RISKY"),
     ]
 
-    for vol_id, size, vol_type, savings, severity, name in ebs_volumes:
+    for vol_id, size, vol_type, savings, severity, name, conf_score, conf_reasons, conf_label in _ebs_confidence:
         findings.append(Finding(
             resource_id=vol_id,
             resource_type="EBS",
@@ -267,6 +288,9 @@ def create_sample_findings() -> list[Finding]:
             description=f"Unattached {vol_type} volume ({size} GiB) in available state",
             monthly_savings=savings,
             severity=severity,
+            confidence_score=conf_score,
+            confidence_reasons=conf_reasons,
+            safe_to_delete=conf_label,
             details={
                 "volume_type": vol_type,
                 "size_gib": size,
@@ -287,6 +311,9 @@ def create_sample_findings() -> list[Finding]:
         description="Elastic IP allocated but not associated",
         monthly_savings=3.60,
         severity="Medium",
+        confidence_score=90,
+        confidence_reasons=["Unassociated Elastic IP — $3.60/month with zero utility"],
+        safe_to_delete="SAFE",
         details={
             "public_ip": "3.92.145.201",
             "domain": "vpc",
@@ -303,6 +330,9 @@ def create_sample_findings() -> list[Finding]:
         description="Elastic IP allocated but not associated",
         monthly_savings=3.60,
         severity="Medium",
+        confidence_score=90,
+        confidence_reasons=["Unassociated Elastic IP — $3.60/month with zero utility"],
+        safe_to_delete="SAFE",
         details={
             "public_ip": "54.210.88.112",
             "domain": "vpc",
@@ -320,8 +350,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="missing_lifecycle",
         description="Bucket (500 GB) has no lifecycle policy. Tiering objects >30d to S3-IA saves ~$4.60/month",
-        monthly_savings=4.60,  # 500 GB * $0.023 * 40%
+        monthly_savings=4.60,
         severity="Medium",
+        confidence_score=0,
+        confidence_reasons=[],
+        safe_to_delete="UNKNOWN",
         details={
             "bucket_name": "legacy-data-archive-prod",
             "size_gb": 500.0,
@@ -342,8 +375,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="orphaned_snapshot",
         description="Snapshot (150 GB, 120d old) has no associated volume or AMI. Source volume vol-deleted1 no longer exists.",
-        monthly_savings=7.50,  # 150 GB * $0.05
+        monthly_savings=7.50,
         severity="Medium",
+        confidence_score=70,
+        confidence_reasons=["Snapshot is 120 days old (>90d — stale)", "Source volume (vol-deleted1) no longer exists", "Encrypted snapshot — verify retention policy"],
+        safe_to_delete="CAUTION",
         details={
             "snapshot_id": "snap-0abc123def456789a",
             "volume_id": "vol-deleted1",
@@ -364,8 +400,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="orphaned_snapshot",
         description="Snapshot (200 GB, 90d old) has no associated volume or AMI. Source volume vol-deleted2 no longer exists.",
-        monthly_savings=10.00,  # 200 GB * $0.05
+        monthly_savings=10.00,
         severity="Medium",
+        confidence_score=65,
+        confidence_reasons=["Snapshot is 90 days old (>90d — stale)", "Source volume (vol-deleted2) no longer exists", "Encrypted snapshot — verify retention policy"],
+        safe_to_delete="CAUTION",
         details={
             "snapshot_id": "snap-0def456789abc1234b",
             "volume_id": "vol-deleted2",
@@ -386,8 +425,11 @@ def create_sample_findings() -> list[Finding]:
         region="us-east-1",
         issue_type="orphaned_snapshot",
         description="Snapshot (500 GB, 180d old) has no associated volume or AMI. Source volume vol-deleted3 no longer exists.",
-        monthly_savings=25.00,  # 500 GB * $0.05
+        monthly_savings=25.00,
         severity="High",
+        confidence_score=80,
+        confidence_reasons=["Snapshot is 180 days old (>180d — very stale)", "Source volume (vol-deleted3) no longer exists", "Unencrypted snapshot — low retention risk"],
+        safe_to_delete="SAFE",
         details={
             "snapshot_id": "snap-0ghi789abc123def4c",
             "volume_id": "vol-deleted3",
@@ -411,8 +453,11 @@ def create_sample_findings() -> list[Finding]:
         region="global",
         issue_type="ri_opportunity",
         description="4x m5.large running on-demand for 30+ days without RI coverage. 1-year no-upfront RI saves 37%.",
-        monthly_savings=103.30,  # 4 * $0.096 * 0.37 * 730
+        monthly_savings=103.30,
         severity="High",
+        confidence_score=0,
+        confidence_reasons=[],
+        safe_to_delete="UNKNOWN",
         details={
             "instance_type": "m5.large",
             "ondemand_count": 4,
@@ -436,8 +481,11 @@ def create_sample_findings() -> list[Finding]:
         region="global",
         issue_type="cost_anomaly",
         description="Cost anomaly detected: $187 unexpected spend (92% confidence)",
-        monthly_savings=0.0,  # Anomalies flag issues, not direct savings
+        monthly_savings=0.0,
         severity="Medium",
+        confidence_score=0,
+        confidence_reasons=[],
+        safe_to_delete="UNKNOWN",
         details={
             "anomaly_id": "abc12345-6789-0abc-def0-123456789012",
             "total_impact": 187.50,
@@ -462,6 +510,9 @@ def create_sample_findings() -> list[Finding]:
         description="Average CPU 3.2% over 14d (<5%); ASG managed (prod-worker-asg) - review scaling policies instead of direct termination",
         monthly_savings=70.08,
         severity="Medium",
+        confidence_score=15,
+        confidence_reasons=["Part of Auto Scaling Group (prod-worker-asg) — review ASG policies instead", "Production naming pattern ('prod' in name) — high risk"],
+        safe_to_delete="RISKY",
         details={
             "instance_type": "m5.large",
             "avg_cpu_14d": 3.2,
