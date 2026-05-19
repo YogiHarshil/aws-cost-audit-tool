@@ -16,21 +16,28 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 
 from botocore.exceptions import ClientError, ProfileNotFound
 
+import boto3
+
 from ai.recommender import Recommender
 from ai.summarizer import Summarizer
+from ai.bedrock_summarizer import BedrockSummarizer, BedrockRecommender, create_session_from_api_key
 from config import Config, ConfigError
 from models.finding import Finding
 from models.report import Report, ScanConfig
 from reports.generator import render_html
 from reports.pdf import generate_pdf
 from scanners.base import BaseScanner
+from scanners.cloudwatch_logs import CloudWatchLogsScanner
 from scanners.cost_explorer import CostExplorerScanner
 from scanners.ebs import EBSScanner
 from scanners.ec2 import EC2Scanner
+from scanners.ecs import ECSScanner
 from scanners.eip import EIPScanner
-from scanners.rds import RDSScanner
+from scanners.load_balancer import LoadBalancerScanner
+from scanners.nat_gateway import NATGatewayScanner
 from scanners.compute_optimizer import scan_compute_optimizer
 from scanners.reservations import ReservationScanner
+from scanners.rds import RDSScanner
 from scanners.s3 import S3Scanner
 from scanners.savings_plans import scan_savings_plans
 from scanners.snapshots import SnapshotScanner
@@ -53,6 +60,10 @@ _SCANNER_CLASSES: Sequence[Type[BaseScanner]] = (
     EIPScanner,
     S3Scanner,
     SnapshotScanner,
+    NATGatewayScanner,
+    LoadBalancerScanner,
+    CloudWatchLogsScanner,
+    ECSScanner,
 )
 
 _SCANNER_LABELS = (
@@ -62,6 +73,10 @@ _SCANNER_LABELS = (
     "Elastic IPs",
     "S3 buckets",
     "EBS snapshots",
+    "NAT Gateways",
+    "Load Balancers",
+    "CloudWatch Logs",
+    "ECS clusters",
 )
 
 # Severity ranking for deduplication (higher number = higher priority)
@@ -326,21 +341,50 @@ def cost_explorer_phase(session: Any) -> Tuple[List[Finding], Dict[str, Any], Li
 
 def apply_ai_to_report(report: Report, scan_cfg: ScanConfig) -> None:
     """Populate executive summary, recommendations, and per-finding explanations."""
-    key = scan_cfg.openai_api_key or ""
-    summarizer = Summarizer(
-        key,
-        model=scan_cfg.openai_model,
-        base_url=scan_cfg.openai_base_url,
-        extra_body=scan_cfg.openai_extra_body,
-        default_headers=scan_cfg.openai_default_headers,
-    )
-    recommender = Recommender(
-        key,
-        model=scan_cfg.openai_model,
-        base_url=scan_cfg.openai_base_url,
-        extra_body=scan_cfg.openai_extra_body,
-        default_headers=scan_cfg.openai_default_headers,
-    )
+    if scan_cfg.use_bedrock:
+        # Use AWS Bedrock for AI summaries
+        logger.info("Generating AI summaries with AWS Bedrock (%s)", scan_cfg.bedrock_model)
+        if scan_cfg.bedrock_api_key:
+            # Use direct API key authentication
+            logger.info("Using Bedrock API key authentication")
+            session = create_session_from_api_key(
+                scan_cfg.bedrock_api_key,
+                region=scan_cfg.bedrock_region,
+            )
+        elif scan_cfg.bedrock_profile:
+            session = boto3.Session(profile_name=scan_cfg.bedrock_profile)
+        else:
+            session = boto3.Session()
+
+        summarizer = BedrockSummarizer(
+            session=session,
+            model_id=scan_cfg.bedrock_model,
+            region=scan_cfg.bedrock_region,
+        )
+        recommender = BedrockRecommender(
+            session=session,
+            model_id=scan_cfg.bedrock_model,
+            region=scan_cfg.bedrock_region,
+        )
+    else:
+        # Use OpenAI (or compatible API)
+        logger.info("Generating AI summaries with OpenAI (%s)", scan_cfg.openai_model)
+        key = scan_cfg.openai_api_key or ""
+        summarizer = Summarizer(
+            key,
+            model=scan_cfg.openai_model,
+            base_url=scan_cfg.openai_base_url,
+            extra_body=scan_cfg.openai_extra_body,
+            default_headers=scan_cfg.openai_default_headers,
+        )
+        recommender = Recommender(
+            key,
+            model=scan_cfg.openai_model,
+            base_url=scan_cfg.openai_base_url,
+            extra_body=scan_cfg.openai_extra_body,
+            default_headers=scan_cfg.openai_default_headers,
+        )
+
     report.executive_summary = summarizer.generate_executive_summary(
         report.findings,
         report.cost_trends,

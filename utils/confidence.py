@@ -368,6 +368,152 @@ def _score_ebs_snapshot(finding: Finding, session: Any) -> Tuple[int, List[str]]
     return _clamp(score), reasons
 
 
+def _score_nat_gateway(finding: Finding, session: Any) -> Tuple[int, List[str]]:
+    """Score an idle NAT Gateway."""
+    score = 85  # Idle NAT Gateway is a strong waste signal
+    reasons: List[str] = []
+    details = finding.details or {}
+    tags = details.get("tags") or []
+    name = _get_name_tag(tags)
+
+    # Zero bytes processed is a clear signal
+    bytes_processed = details.get("bytes_processed_14d", 0)
+    if bytes_processed == 0:
+        score += 10
+        reasons.append("Zero bytes processed in 14 days — completely idle")
+
+    # Name-based signals
+    dev_match = _matches_any(name, _DEV_PATTERNS)
+    if dev_match:
+        score += 5
+        reasons.append(f"Dev/test naming pattern ('{dev_match}' in name)")
+
+    prod_match = _matches_any(name, _PROD_PATTERNS)
+    if prod_match:
+        score -= 15
+        reasons.append(f"Production naming pattern ('{prod_match}' in name) — verify no planned usage")
+
+    return _clamp(score), reasons
+
+
+def _score_load_balancer(finding: Finding, session: Any) -> Tuple[int, List[str]]:
+    """Score an idle Load Balancer (ALB/NLB/CLB)."""
+    score = 80  # No targets is a strong waste signal
+    reasons: List[str] = []
+    details = finding.details or {}
+    tags = details.get("tags") or []
+    name = _get_name_tag(tags)
+    lb_type = details.get("type", "application")
+
+    # No registered targets
+    target_count = details.get("target_count", 0)
+    if target_count == 0:
+        score += 10
+        reasons.append("No registered targets — load balancer is unused")
+
+    # Name-based signals
+    dev_match = _matches_any(name, _DEV_PATTERNS)
+    if dev_match:
+        score += 5
+        reasons.append(f"Dev/test naming pattern ('{dev_match}' in name)")
+
+    prod_match = _matches_any(name, _PROD_PATTERNS)
+    if prod_match:
+        score -= 20
+        reasons.append(f"Production naming pattern ('{prod_match}' in name) — verify DNS/routing")
+
+    return _clamp(score), reasons
+
+
+def _score_cloudwatch_logs(finding: Finding, session: Any) -> Tuple[int, List[str]]:
+    """Score a CloudWatch Log group without retention."""
+    score = 70  # Missing retention is a moderate waste signal
+    reasons: List[str] = []
+    details = finding.details or {}
+    name = finding.resource_id  # Log group name
+
+    # Check for stale logs
+    stored_bytes = details.get("stored_bytes", 0)
+    if stored_bytes == 0:
+        score += 15
+        reasons.append("Log group is empty — can be deleted or retention policy added")
+    elif stored_bytes > 1_000_000_000:  # > 1GB
+        score += 10
+        reasons.append(f"Large log group ({stored_bytes / 1_000_000_000:.1f} GB) — retention policy recommended")
+
+    # Name-based signals
+    name_lower = name.lower()
+    dev_match = _matches_any(name_lower, _DEV_PATTERNS)
+    if dev_match:
+        score += 10
+        reasons.append(f"Dev/test naming pattern ('{dev_match}' in name)")
+
+    prod_match = _matches_any(name_lower, _PROD_PATTERNS)
+    if prod_match:
+        score -= 15
+        reasons.append(f"Production naming pattern ('{prod_match}' in name) — verify compliance requirements")
+
+    return _clamp(score), reasons
+
+
+def _score_ecs_cluster(finding: Finding, session: Any) -> Tuple[int, List[str]]:
+    """Score an empty ECS cluster."""
+    score = 90  # Empty cluster is a clear waste signal
+    reasons: List[str] = []
+    details = finding.details or {}
+    tags = details.get("tags") or []
+    name = _get_name_tag(tags) or finding.resource_id.lower()
+
+    # Empty cluster (no services, tasks, instances)
+    service_count = details.get("active_services", 0)
+    task_count = details.get("running_tasks", 0)
+    if service_count == 0 and task_count == 0:
+        score += 5
+        reasons.append("No services or tasks — cluster is completely empty")
+
+    # Name-based signals
+    dev_match = _matches_any(name, _DEV_PATTERNS)
+    if dev_match:
+        score += 5
+        reasons.append(f"Dev/test naming pattern ('{dev_match}' in name)")
+
+    prod_match = _matches_any(name, _PROD_PATTERNS)
+    if prod_match:
+        score -= 15
+        reasons.append(f"Production naming pattern ('{prod_match}' in name) — verify no planned deployments")
+
+    return _clamp(score), reasons
+
+
+def _score_s3_bucket(finding: Finding, session: Any) -> Tuple[int, List[str]]:
+    """Score an S3 bucket without lifecycle policy."""
+    score = 60  # Missing lifecycle is a moderate signal
+    reasons: List[str] = []
+    details = finding.details or {}
+    name = finding.resource_id.lower()
+
+    # Empty bucket is safer to configure
+    object_count = details.get("object_count", -1)
+    if object_count == 0:
+        score += 15
+        reasons.append("Bucket is empty — safe to add lifecycle policy or delete")
+    elif object_count > 0:
+        reasons.append(f"Bucket has {object_count} objects — review before adding lifecycle")
+
+    # Name-based signals
+    dev_match = _matches_any(name, _DEV_PATTERNS)
+    if dev_match:
+        score += 10
+        reasons.append(f"Dev/test naming pattern ('{dev_match}' in name)")
+
+    prod_match = _matches_any(name, {"prod", "production", "data", "backup"})
+    if prod_match:
+        score -= 20
+        reasons.append(f"Production/data naming pattern ('{prod_match}' in name) — verify retention requirements")
+
+    return _clamp(score), reasons
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -401,6 +547,16 @@ def calculate_confidence(
             score, reasons = _score_eip(finding, session)
         elif resource_type == "EBS Snapshot" and issue_type == "orphaned_snapshot":
             score, reasons = _score_ebs_snapshot(finding, session)
+        elif resource_type == "NAT Gateway" and issue_type == "idle":
+            score, reasons = _score_nat_gateway(finding, session)
+        elif resource_type in ("ALB", "NLB", "CLB", "Load Balancer") and issue_type == "no_targets":
+            score, reasons = _score_load_balancer(finding, session)
+        elif resource_type == "CloudWatch Logs" and issue_type in ("no_retention", "missing_retention"):
+            score, reasons = _score_cloudwatch_logs(finding, session)
+        elif resource_type in ("ECS Cluster", "ECS Service") and issue_type == "empty":
+            score, reasons = _score_ecs_cluster(finding, session)
+        elif resource_type == "S3" and issue_type == "missing_lifecycle":
+            score, reasons = _score_s3_bucket(finding, session)
         else:
             # Unknown resource type — return neutral/unknown
             return 0, [], "UNKNOWN"

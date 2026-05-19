@@ -43,7 +43,10 @@ class Finding:
         valid_types = [
             "EC2", "RDS", "EBS", "EIP", "S3", "Cost Explorer",
             "EBS Snapshot", "Reserved Instance",
-            "SavingsPlans", "TrustedAdvisor",  # New scanner types
+            "SavingsPlans", "TrustedAdvisor",
+            # New scanner types
+            "NAT Gateway", "ALB", "NLB", "CLB", "Load Balancer",
+            "CloudWatch Logs", "ECS Cluster", "ECS Service",
         ]
         if self.resource_type not in valid_types:
             raise ValueError(f"Invalid resource_type: {self.resource_type}")

@@ -173,11 +173,18 @@ class Config:
     aws_role_arn: Optional[str]
     regions: Optional[List[str]]
     client_name: str
+    # OpenAI settings
     openai_api_key: Optional[str]
     openai_base_url: Optional[str]
     openai_model: str
     openai_extra_body: Optional[Dict[str, Any]]
     openai_default_headers: Optional[Dict[str, str]]
+    # Bedrock settings
+    use_bedrock: bool
+    bedrock_api_key: Optional[str]
+    bedrock_profile: Optional[str]
+    bedrock_model: str
+    bedrock_region: str
     skip_ai: bool
     output_dir: str
     exclude_tags: List[Dict[str, str]]
@@ -246,6 +253,27 @@ class Config:
             openai_extra_body = _openrouter_reasoning_extra_body(openai_base_url)
         openai_default_headers = _openai_default_headers_from_env()
 
+        # Bedrock settings
+        use_bedrock_raw = (os.getenv("USE_BEDROCK") or "").strip().lower()
+        use_bedrock = use_bedrock_raw in ("1", "true", "yes", "on")
+
+        bedrock_api_key = os.getenv("BEDROCK_API_KEY")
+        if bedrock_api_key is not None:
+            bedrock_api_key = bedrock_api_key.strip() or None
+            # Auto-enable Bedrock if API key is provided
+            if bedrock_api_key:
+                use_bedrock = True
+
+        bedrock_profile = os.getenv("BEDROCK_PROFILE")
+        if bedrock_profile is not None:
+            bedrock_profile = bedrock_profile.strip() or None
+
+        bedrock_model = (
+            os.getenv("BEDROCK_MODEL") or "anthropic.claude-3-haiku-20240307-v1:0"
+        ).strip()
+
+        bedrock_region = (os.getenv("BEDROCK_REGION") or "us-east-1").strip()
+
         verbose = bool(cli_args and getattr(cli_args, "verbose", False))
         if verbose:
             log_level = "DEBUG"
@@ -257,11 +285,15 @@ class Config:
                     f"Must be one of: {', '.join(sorted(_VALID_LOG_LEVELS))}"
                 )
 
-        if not skip_ai and not openai_api_key:
-            raise ConfigError(
-                "OPENAI_API_KEY required when AI summaries are enabled. "
-                "Set the key in .env or pass --skip-ai."
-            )
+        # Validate AI config: need either Bedrock OR OpenAI if AI enabled
+        if not skip_ai:
+            if use_bedrock:
+                logger.info("Using AWS Bedrock for AI summaries (region: %s)", bedrock_region)
+            elif not openai_api_key:
+                raise ConfigError(
+                    "AI requires either USE_BEDROCK=true or OPENAI_API_KEY. "
+                    "Set one in .env or pass --skip-ai."
+                )
 
         # MAX_WORKERS for parallel scanning (default 5, safer for large accounts)
         max_workers_raw = os.getenv("MAX_WORKERS", "5")
@@ -280,6 +312,11 @@ class Config:
             openai_model=openai_model,
             openai_extra_body=openai_extra_body,
             openai_default_headers=openai_default_headers,
+            use_bedrock=use_bedrock,
+            bedrock_api_key=bedrock_api_key,
+            bedrock_profile=bedrock_profile,
+            bedrock_model=bedrock_model,
+            bedrock_region=bedrock_region,
             skip_ai=skip_ai,
             output_dir=output_dir,
             exclude_tags=exclude_tags,
@@ -307,6 +344,11 @@ class Config:
             openai_model=self.openai_model,
             openai_extra_body=self.openai_extra_body,
             openai_default_headers=self.openai_default_headers,
+            use_bedrock=self.use_bedrock,
+            bedrock_api_key=self.bedrock_api_key,
+            bedrock_profile=self.bedrock_profile,
+            bedrock_model=self.bedrock_model,
+            bedrock_region=self.bedrock_region,
             skip_ai=self.skip_ai,
             output_dir=self.output_dir,
             exclude_tags=list(self.exclude_tags),

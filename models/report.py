@@ -74,11 +74,18 @@ class ScanConfig:
     aws_role_arn: Optional[str] = None
     regions: Optional[List[str]] = None  # None = all enabled regions
     client_name: str = "Client"
+    # OpenAI settings (Option 2/3)
     openai_api_key: Optional[str] = None
     openai_base_url: Optional[str] = None  # e.g. OpenRouter: https://openrouter.ai/api/v1
     openai_model: str = "gpt-4o-mini"  # e.g. OpenRouter: openai/gpt-4o-mini
     openai_extra_body: Optional[Dict[str, Any]] = None  # e.g. OpenRouter reasoning: {"reasoning": {"enabled": True}}
     openai_default_headers: Optional[Dict[str, str]] = None  # e.g. HTTP-Referer, X-Title for OpenRouter
+    # Bedrock settings (Option 1 - recommended)
+    use_bedrock: bool = False
+    bedrock_api_key: Optional[str] = None  # Direct API key from Bedrock console
+    bedrock_profile: Optional[str] = None  # Separate profile for Bedrock (YOUR account)
+    bedrock_model: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    bedrock_region: str = "us-east-1"
     skip_ai: bool = False
     output_dir: str = "./output"
     exclude_tags: Optional[List[Dict[str, str]]] = None  # Tag filters
@@ -91,12 +98,16 @@ class ScanConfig:
         if self.exclude_tags is None:
             self.exclude_tags = []
 
-        # Validate OpenAI key if AI enabled
-        if not self.skip_ai and not self.openai_api_key:
-            raise ValueError(
-                "OPENAI_API_KEY required when AI summaries enabled. "
-                "Set key or use --skip-ai flag."
-            )
+        # Validate AI config: need either Bedrock OR OpenAI if AI enabled
+        if not self.skip_ai:
+            if self.use_bedrock:
+                # Bedrock mode - profile is optional (uses default if not set)
+                pass
+            elif not self.openai_api_key:
+                raise ValueError(
+                    "AI requires either USE_BEDROCK=true or OPENAI_API_KEY. "
+                    "Set one or use --skip-ai flag."
+                )
 
         # Validate output directory exists or can be created
         if not os.path.exists(self.output_dir):
