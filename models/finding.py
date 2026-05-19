@@ -24,6 +24,10 @@ class Finding:
     details: Dict  # Additional metadata (instance type, size, tags, etc.)
     ai_explanation: Optional[str] = None  # AI-generated explanation (nullable)
     discovered_at: datetime = field(default_factory=_utc_now)
+    # Confidence / safe-to-delete scoring (populated post-scan)
+    confidence_score: int = 0   # 0-100
+    confidence_reasons: list = field(default_factory=list)  # plain-English list
+    safe_to_delete: str = "UNKNOWN"  # SAFE / CAUTION / RISKY / UNKNOWN
 
     def __post_init__(self):
         """Validate field values."""

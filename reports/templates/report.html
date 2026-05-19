@@ -199,6 +199,50 @@
             color: #2c3e50;
         }
 
+        /* Confidence / safe-to-delete badges */
+        .confidence-badge {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 8pt;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+
+        .conf-safe {
+            background-color: #1a8a4a;
+            color: #fff;
+        }
+
+        .conf-caution {
+            background-color: #d97706;
+            color: #fff;
+        }
+
+        .conf-risky {
+            background-color: #c0392b;
+            color: #fff;
+        }
+
+        .conf-unknown {
+            background-color: #8a9aaa;
+            color: #fff;
+        }
+
+        .conf-reasons {
+            font-size: 7.5pt;
+            color: #5a6c7d;
+            margin-top: 3px;
+            line-height: 1.4;
+        }
+
+        .conf-score {
+            font-size: 7pt;
+            color: #8a9aaa;
+            margin-top: 1px;
+        }
+
         .rec-block {
             margin-bottom: 0.35in;
             padding: 12px 14px;
@@ -241,16 +285,22 @@
 
         <!-- Executive Metrics -->
         <div style="margin-top: 0.3in; padding: 12px; background: #f0f7ff; border-radius: 6px; text-align: center;">
-            <div style="display: inline-block; margin: 0 20px; text-align: center;">
+            <div style="display: inline-block; margin: 0 16px; text-align: center;">
                 <div style="font-size: 20pt; color: #0d8050; font-weight: 700;">{{ (total_savings * 12) | money_int }}</div>
                 <div style="font-size: 9pt; color: #5a6c7d;">Annualized Savings</div>
             </div>
+            {% if safe_findings_count > 0 %}
+            <div style="display: inline-block; margin: 0 16px; text-align: center;">
+                <div style="font-size: 20pt; color: #1a8a4a; font-weight: 700;">{{ safe_findings_count }}</div>
+                <div style="font-size: 9pt; color: #5a6c7d;">Safe to Delete Now</div>
+            </div>
+            {% endif %}
             {% if total_savings > 0 %}
-            <div style="display: inline-block; margin: 0 20px; text-align: center;">
+            <div style="display: inline-block; margin: 0 16px; text-align: center;">
                 <div style="font-size: 20pt; color: #0d5c9e; font-weight: 700;">{{ "%.0f"|format(((total_savings * 12 - 1200) / 1200 * 100)) }}%</div>
                 <div style="font-size: 9pt; color: #5a6c7d;">ROI (vs $1,200 audit)</div>
             </div>
-            <div style="display: inline-block; margin: 0 20px; text-align: center;">
+            <div style="display: inline-block; margin: 0 16px; text-align: center;">
                 <div style="font-size: 20pt; color: #1a3a5c; font-weight: 700;">{{ "%.0f"|format(1200 / (total_savings / 30)) }}d</div>
                 <div style="font-size: 9pt; color: #5a6c7d;">Payback Period</div>
             </div>
@@ -309,6 +359,7 @@
                     <th>Issue</th>
                     <th>Monthly savings</th>
                     <th>Severity</th>
+                    <th>Confidence</th>
                 </tr>
             </thead>
             <tbody>
@@ -322,10 +373,31 @@
                     <td>
                         <span class="severity severity-{{ finding.severity|lower }}">{{ finding.severity }}</span>
                     </td>
+                    <td>
+                        {% if finding.safe_to_delete == "SAFE" %}
+                            <span class="confidence-badge conf-safe">&#10003; SAFE</span>
+                        {% elif finding.safe_to_delete == "CAUTION" %}
+                            <span class="confidence-badge conf-caution">&#9888; CAUTION</span>
+                        {% elif finding.safe_to_delete == "RISKY" %}
+                            <span class="confidence-badge conf-risky">&#9888; RISKY</span>
+                        {% else %}
+                            <span class="confidence-badge conf-unknown">&#8212; N/A</span>
+                        {% endif %}
+                        {% if finding.confidence_score > 0 %}
+                        <div class="conf-score">Score: {{ finding.confidence_score }}/100</div>
+                        {% endif %}
+                        {% if finding.confidence_reasons %}
+                        <div class="conf-reasons">
+                            {% for reason in finding.confidence_reasons[:2] %}
+                            &bull; {{ reason }}<br>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% if finding.ai_explanation %}
                 <tr class="finding-ai">
-                    <td colspan="6"><em>AI note:</em> {{ finding.ai_explanation }}</td>
+                    <td colspan="7"><em>AI note:</em> {{ finding.ai_explanation }}</td>
                 </tr>
                 {% endif %}
                 {% endfor %}
@@ -333,6 +405,12 @@
         </table>
         {% if findings|length == 0 %}
         <p style="color:#5a6c7d;">No findings for this scan.</p>
+        {% endif %}
+        {% if safe_findings_count > 0 %}
+        <p style="margin-top:0.15in; padding:8px 12px; background:#e8f7ee; border-left:3px solid #1a8a4a; color:#1a5c34; font-size:9.5pt;">
+            <strong>{{ safe_findings_count }} finding(s) rated SAFE TO DELETE immediately</strong>
+            — high-confidence waste with no production signals detected.
+        </p>
         {% endif %}
     </div>
 

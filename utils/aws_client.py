@@ -126,7 +126,7 @@ def create_client(
 def discover_regions(session: boto3.Session, partition_name: str = "aws") -> List[str]:
     """Return EC2 opt-in aware region codes for the given partition.
 
-    Uses the boto3 region catalog (same source as the AWS CLI).
+    Uses DescribeRegions to query dynamically enabled regions.
 
     Args:
         session: boto3 session (credentials not consulted for this call).
@@ -135,5 +135,11 @@ def discover_regions(session: boto3.Session, partition_name: str = "aws") -> Lis
     Returns:
         Sorted list of region codes.
     """
-    regions = session.get_available_regions("ec2", partition_name=partition_name)
-    return sorted(regions)
+    ec2_client = create_client(session, "ec2", region_name="us-east-1")
+    try:
+        response = ec2_client.describe_regions(AllRegions=False)
+        return sorted([r["RegionName"] for r in response["Regions"]])
+    except Exception as e:
+        logger.warning(f"Failed to describe regions dynamically: {e}")
+        regions = session.get_available_regions("ec2", partition_name=partition_name)
+        return sorted(regions)
